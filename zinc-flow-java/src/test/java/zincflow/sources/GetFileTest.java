@@ -34,7 +34,7 @@ final class GetFileTest {
         assertEquals("file", ff.attributes().get("source"));
         assertEquals("8", ff.attributes().get("size"));
         assertArrayEquals("hi there".getBytes(StandardCharsets.UTF_8),
-                ((RawContent) ff.content()).bytes());
+                ((RawContent) ff.content).bytes);
     }
 
     @Test

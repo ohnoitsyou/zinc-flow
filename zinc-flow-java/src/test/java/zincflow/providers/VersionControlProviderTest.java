@@ -32,8 +32,8 @@ final class VersionControlProviderTest {
     void statusWhenDisabledReportsDisabled() {
         var vc = new VersionControlProvider(Path.of("."), null, null, null);
         var s = vc.status();
-        assertFalse(s.enabled());
-        assertEquals("provider disabled", s.error());
+        assertFalse(s.enabled);
+        assertEquals("provider disabled", s.error);
     }
 
     @Test
@@ -42,10 +42,10 @@ final class VersionControlProviderTest {
         initRepo(dir);
         var vc = enabledProvider(dir);
         var s = vc.status();
-        assertTrue(s.enabled());
-        assertTrue(s.clean(), "freshly-initialised repo with committed README should be clean");
-        assertEquals(0, s.ahead());
-        assertEquals(0, s.behind());
+        assertTrue(s.enabled);
+        assertTrue(s.clean, "freshly-initialised repo with committed README should be clean");
+        assertEquals(0, s.ahead);
+        assertEquals(0, s.behind);
     }
 
     @Test
@@ -56,8 +56,8 @@ final class VersionControlProviderTest {
         Files.writeString(newFile, "hello");
         var vc = enabledProvider(dir);
         var r = vc.commit("note.txt", "add note");
-        assertTrue(r.ok(), r.stderr());
-        assertTrue(vc.status().clean(), "after commit the working tree should be clean");
+        assertTrue(r.ok, r.stderr());
+        assertTrue(vc.status().clean, "after commit the working tree should be clean");
     }
 
     @Test
@@ -65,7 +65,7 @@ final class VersionControlProviderTest {
         var vc = new VersionControlProvider(Path.of("."), null, null, null);
         vc.enable();
         var r = vc.commit("file", "");
-        assertFalse(r.ok());
+        assertFalse(r.ok);
     }
 
     @Test
@@ -75,7 +75,7 @@ final class VersionControlProviderTest {
         var vc = new VersionControlProvider(dir, "/no/such/git", "origin", "main");
         vc.enable();
         var r = vc.commit("x", "msg");
-        assertFalse(r.ok());
+        assertFalse(r.ok);
         assertFalse(r.stderr().isEmpty(), "expected stderr-populated failure for missing binary");
     }
 

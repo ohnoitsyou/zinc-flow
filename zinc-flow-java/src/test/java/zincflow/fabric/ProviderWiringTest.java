@@ -24,8 +24,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /// add/remove + source registration.
 final class ProviderWiringTest {
 
-    private static PipelineGraph singleNoop(Processor p) {
-        return new PipelineGraph(Map.of("p", p), Map.of(), List.of("p"));
+    private static PipelineGraphKt singleNoop(Processor p) {
+        return new PipelineGraphKt(Map.of("p", p), Map.of(), List.of("p"));
     }
 
     @Test
@@ -40,7 +40,7 @@ final class ProviderWiringTest {
         pipeline.ingest(FlowFile.create(new byte[0], Map.of()));
 
         assertEquals(1, prov.size());
-        assertEquals(ProvenanceProvider.EventType.PROCESSED, prov.getRecent(1).get(0).type());
+        assertEquals(ProvenanceProvider.EventType.PROCESSED, prov.getRecent(1).get(0).type);
     }
 
     @Test
@@ -81,7 +81,7 @@ final class ProviderWiringTest {
         context.registerDependent("logging", "logger");
 
         Processor logger = ff -> ProcessorResult.single(ff);
-        var graph = new PipelineGraph(Map.of("logger", logger), Map.of(), List.of("logger"));
+        var graph = new PipelineGraphKt(Map.of("logger", logger), Map.of(), List.of("logger"));
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, null, context, null);
 
         assertTrue(pipeline.disableProvider("logging"));
@@ -96,7 +96,7 @@ final class ProviderWiringTest {
     @Test
     void addProcessorUsesRegistry() {
         var registry = new Registry();
-        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, null, registry);
+        var pipeline = new Pipeline(PipelineGraphKt.empty(), Pipeline.DEFAULT_MAX_HOPS, null, null, registry);
 
         assertTrue(pipeline.addProcessor("log", "LogAttribute",
                 Map.of("prefix", "[x] "), List.of(), Map.of()));
@@ -116,7 +116,7 @@ final class ProviderWiringTest {
 
     @Test
     void sourceLifecycleMirrorsStartStop() {
-        var pipeline = new Pipeline(PipelineGraph.empty());
+        var pipeline = new Pipeline(PipelineGraphKt.empty());
         var fake = new FakeSource("inbox", "http");
         pipeline.addSource(fake);
 

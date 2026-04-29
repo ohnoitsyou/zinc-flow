@@ -55,9 +55,9 @@ final class HotReloadDiffTest {
         assertNotSame(first.processors().get("b"), second.processors().get("b"));
 
         var diff = pipeline.applyReload(second);
-        assertEquals(0, diff.added());
-        assertEquals(0, diff.removed());
-        assertEquals(1, diff.updated(), "b rebuilt");
+        assertEquals(0, diff.added);
+        assertEquals(0, diff.removed);
+        assertEquals(1, diff.updated, "b rebuilt");
     }
 
     @Test
@@ -83,9 +83,9 @@ final class HotReloadDiffTest {
                       success: [c]
                 """;
         var diff = pipeline.applyReload(loader.load(nextYaml));
-        assertEquals(1, diff.added(), "c is new");
-        assertEquals(1, diff.removed(), "b is gone");
-        assertTrue(diff.connectionsChanged() >= 1,
+        assertEquals(1, diff.added, "c is new");
+        assertEquals(1, diff.removed, "b is gone");
+        assertTrue(diff.connectionsChanged >= 1,
                 "a's success target changed from [b] to [c]");
     }
 
@@ -103,9 +103,9 @@ final class HotReloadDiffTest {
                 "    a:\n      success: [b]\n      failure: [b]");
         assertNotEquals(BASE_YAML, nextYaml, "YAML mutation must actually change the text");
         var diff = pipeline.applyReload(loader.load(nextYaml));
-        assertEquals(0, diff.added());
-        assertEquals(0, diff.removed());
-        assertEquals(0, diff.updated(), "processor instances unchanged");
-        assertEquals(1, diff.connectionsChanged());
+        assertEquals(0, diff.added);
+        assertEquals(0, diff.removed);
+        assertEquals(0, diff.updated, "processor instances unchanged");
+        assertEquals(1, diff.connectionsChanged);
     }
 }

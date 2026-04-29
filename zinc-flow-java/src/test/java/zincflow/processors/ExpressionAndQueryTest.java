@@ -21,7 +21,7 @@ final class ExpressionAndQueryTest {
                 "routing.key", "attributes['priority'] + '/' + attributes['tenant']"));
         var ff = FlowFile.create(new byte[0], Map.of("priority", "high", "tenant", "acme"));
         var out = (ProcessorResult.Single) proc.process(ff);
-        assertEquals("high/acme", out.flowFile().attributes().get("routing.key"));
+        assertEquals("high/acme", out.flowFile.attributes().get("routing.key"));
     }
 
     @Test
@@ -29,7 +29,7 @@ final class ExpressionAndQueryTest {
         var proc = new EvaluateExpression(Map.of("doubled", "contentSize * 2 + 1"));
         var ff = FlowFile.create(new byte[]{1, 2, 3, 4, 5}, Map.of());
         var out = (ProcessorResult.Single) proc.process(ff);
-        assertEquals("11", out.flowFile().attributes().get("doubled"));
+        assertEquals("11", out.flowFile.attributes().get("doubled"));
     }
 
     @Test
@@ -38,7 +38,7 @@ final class ExpressionAndQueryTest {
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var proc = new EvaluateExpression(Map.of("classification", "record['amount'] > 10 ? 'big' : 'small'"));
         var out = (ProcessorResult.Single) proc.process(ff);
-        assertEquals("big", out.flowFile().attributes().get("classification"));
+        assertEquals("big", out.flowFile.attributes().get("classification"));
     }
 
     @Test
@@ -46,7 +46,7 @@ final class ExpressionAndQueryTest {
         var proc = new EvaluateExpression(Map.of("out", "attributes['nope']"));
         var ff = FlowFile.create(new byte[0], Map.of());
         var out = (ProcessorResult.Single) proc.process(ff);
-        assertEquals("", out.flowFile().attributes().get("out"));
+        assertEquals("", out.flowFile.attributes().get("out"));
     }
 
     @Test
@@ -61,9 +61,9 @@ final class ExpressionAndQueryTest {
         var proc = new EvaluateExpression(exprs);
         var ff = FlowFile.create(new byte[]{1, 2, 3, 4, 5}, Map.of());
         var out = (ProcessorResult.Single) proc.process(ff);
-        assertEquals("10",  out.flowFile().attributes().get("doubled"));
-        assertEquals("15",  out.flowFile().attributes().get("tripled"));
-        assertEquals("105", out.flowFile().attributes().get("sum"));
+        assertEquals("10",  out.flowFile.attributes().get("doubled"));
+        assertEquals("15",  out.flowFile.attributes().get("tripled"));
+        assertEquals("105", out.flowFile.attributes().get("sum"));
     }
 
     @Test
@@ -97,7 +97,7 @@ final class ExpressionAndQueryTest {
         var proc = new TransformRecord(
                 "compute:score:score * 2;compute:label:name + '!'");
         var out = (ProcessorResult.Single) proc.process(ff);
-        var rc = (RecordContent) out.flowFile().content();
+        var rc = (RecordContent) out.flowFile.content;
 
         assertEquals(20, ((Number) rc.records().get(0).get("score")).intValue());
         assertEquals("alice!", rc.records().get(0).get("label"));
@@ -110,7 +110,7 @@ final class ExpressionAndQueryTest {
         var records = List.<Map<String, Object>>of(mutable("oldName", 42));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var proc = new TransformRecord("rename:oldName:newName");
-        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile().content();
+        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile.content;
         assertFalse(rc.records().getFirst().containsKey("oldName"));
         assertEquals(42, rc.records().getFirst().get("newName"));
     }
@@ -120,7 +120,7 @@ final class ExpressionAndQueryTest {
         var records = List.<Map<String, Object>>of(mutable("keep", 1, "drop", 2));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var proc = new TransformRecord("remove:drop");
-        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile().content();
+        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile.content;
         assertFalse(rc.records().getFirst().containsKey("drop"));
         assertEquals(1, rc.records().getFirst().get("keep"));
     }
@@ -130,7 +130,7 @@ final class ExpressionAndQueryTest {
         var records = List.<Map<String, Object>>of(mutable("x", 1));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var proc = new TransformRecord("add:region:us-east-1");
-        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile().content();
+        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile.content;
         assertEquals("us-east-1", rc.records().getFirst().get("region"));
     }
 
@@ -139,7 +139,7 @@ final class ExpressionAndQueryTest {
         var records = List.<Map<String, Object>>of(mutable("src", 99L));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var proc = new TransformRecord("copy:src:dst");
-        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile().content();
+        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile.content;
         assertEquals(99L, rc.records().getFirst().get("dst"));
         assertEquals(99L, rc.records().getFirst().get("src"));
     }
@@ -149,7 +149,7 @@ final class ExpressionAndQueryTest {
         var records = List.<Map<String, Object>>of(mutable("a", "Hello", "b", "World"));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var proc = new TransformRecord("toUpper:a;toLower:b");
-        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile().content();
+        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile.content;
         assertEquals("HELLO", rc.records().getFirst().get("a"));
         assertEquals("world", rc.records().getFirst().get("b"));
     }
@@ -159,7 +159,7 @@ final class ExpressionAndQueryTest {
         var records = List.<Map<String, Object>>of(mutable("present", "x"));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var proc = new TransformRecord("default:absent:fallback;default:present:never");
-        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile().content();
+        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile.content;
         assertEquals("fallback", rc.records().getFirst().get("absent"));
         // `default` only fires when field is missing or null — 'present' keeps its value.
         assertEquals("x", rc.records().getFirst().get("present"));
@@ -173,7 +173,7 @@ final class ExpressionAndQueryTest {
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var proc = new TransformRecord(
                 "compute:subtotal:price * qty;compute:total:subtotal + 10");
-        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile().content();
+        var rc = (RecordContent) ((ProcessorResult.Single) proc.process(ff)).flowFile.content;
         assertEquals(300, ((Number) rc.records().getFirst().get("subtotal")).intValue());
         assertEquals(310, ((Number) rc.records().getFirst().get("total")).intValue());
     }
@@ -221,8 +221,8 @@ final class ExpressionAndQueryTest {
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var proc = new QueryRecord("$[?(@.priority == 'high')]");
         var out = (ProcessorResult.Routed) proc.process(ff);
-        assertEquals("matched", out.route());
-        var rc = (RecordContent) out.flowFile().content();
+        assertEquals("matched", out.route);
+        var rc = (RecordContent) out.flowFile.content;
         assertEquals(2, rc.records().size());
     }
 
@@ -232,7 +232,7 @@ final class ExpressionAndQueryTest {
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var proc = new QueryRecord("$[?(@.priority == 'urgent')]");
         var out = (ProcessorResult.Routed) proc.process(ff);
-        assertEquals("unmatched", out.route());
+        assertEquals("unmatched", out.route);
     }
 
     @Test

@@ -25,11 +25,11 @@ final class ProvenanceProviderTest {
         List<ProvenanceProvider.Event> events = prov.getEvents(42);
         assertEquals(1, events.size());
         var e = events.get(0);
-        assertEquals(42, e.flowFileId());
-        assertEquals(ProvenanceProvider.EventType.ROUTED, e.type());
-        assertEquals("router", e.component());
-        assertEquals("→ high", e.details());
-        assertTrue(e.timestampMillis() > 0);
+        assertEquals(42, e.flowFileId);
+        assertEquals(ProvenanceProvider.EventType.ROUTED, e.type);
+        assertEquals("router", e.component);
+        assertEquals("→ high", e.details);
+        assertTrue(e.timestampMillis > 0);
     }
 
     @Test
@@ -53,9 +53,9 @@ final class ProvenanceProviderTest {
         }
         List<ProvenanceProvider.Event> recent = prov.getRecent(3);
         assertEquals(3, recent.size());
-        assertEquals(7, recent.get(0).flowFileId());
-        assertEquals(8, recent.get(1).flowFileId());
-        assertEquals(9, recent.get(2).flowFileId());
+        assertEquals(7, recent.get(0).flowFileId);
+        assertEquals(8, recent.get(1).flowFileId);
+        assertEquals(9, recent.get(2).flowFileId);
     }
 
     @Test

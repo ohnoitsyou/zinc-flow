@@ -28,7 +28,7 @@ final class PackageFlowFileV3Test {
         }
         assertEquals("application/flowfile-v3", packed.attributes().get("http.content.type"));
         assertEquals("true", packed.attributes().get("v3.packaged"));
-        assertInstanceOf(RawContent.class, packed.content());
+        assertInstanceOf(RawContent.class, packed.content);
 
         if (!(new UnpackageFlowFileV3().process(packed) instanceof ProcessorResult.Single(FlowFile restored))) {
             fail("unpack: expected Single");
@@ -36,10 +36,10 @@ final class PackageFlowFileV3Test {
         }
         assertEquals("acme", restored.attributes().get("tenant"));
         assertEquals("doc.txt", restored.attributes().get("filename"));
-        if (restored.content() instanceof RawContent(byte[] bytes)) {
+        if (restored.content instanceof RawContent(byte[] bytes)) {
             assertEquals("the payload", new String(bytes, StandardCharsets.UTF_8));
         } else {
-            fail("expected RawContent after unpack, got " + restored.content().getClass().getSimpleName());
+            fail("expected RawContent after unpack, got " + restored.content.getClass().getSimpleName());
         }
     }
 
@@ -91,17 +91,17 @@ final class PackageFlowFileV3Test {
             fail("expected Single from pack");
             return;
         }
-        byte[] packedBytes = switch (packed.content()) {
-            case RawContent raw -> raw.bytes();
+        byte[] packedBytes = switch (packed.content) {
+            case RawContent raw -> raw.bytes;
             default -> { fail("pack output should be raw"); yield new byte[0]; }
         };
 
-        var restored = FlowFileV3.unpack(packedBytes, 0).flowFile();
+        var restored = FlowFileV3.unpack(packedBytes, 0).flowFile;
         assertEquals("v", restored.attributes().get("k"));
-        if (restored.content() instanceof RawContent(byte[] out)) {
+        if (restored.content instanceof RawContent(byte[] out)) {
             assertEquals("stored", new String(out, StandardCharsets.UTF_8));
         } else {
-            fail("expected RawContent, got " + restored.content().getClass().getSimpleName());
+            fail("expected RawContent, got " + restored.content.getClass().getSimpleName());
         }
     }
 }

@@ -167,10 +167,10 @@ final class ProcessorsTest {
         var proc = new ReplaceText("world", "Java");
         var ff = FlowFile.create("hello world".getBytes(), Map.of());
         var out = singleOut(proc.process(ff));
-        if (out.content() instanceof RawContent(byte[] bytes)) {
+        if (out.content instanceof RawContent(byte[] bytes)) {
             assertEquals("hello Java", new String(bytes));
         } else {
-            fail("expected RawContent, got " + out.content());
+            fail("expected RawContent, got " + out.content);
         }
     }
 
@@ -179,10 +179,10 @@ final class ProcessorsTest {
         var proc = new ReplaceText("(\\w+)@(\\w+)", "$2<-$1");
         var ff = FlowFile.create("alice@example".getBytes(), Map.of());
         var out = singleOut(proc.process(ff));
-        if (out.content() instanceof RawContent(byte[] bytes)) {
+        if (out.content instanceof RawContent(byte[] bytes)) {
             assertEquals("example<-alice", new String(bytes));
         } else {
-            fail("expected RawContent, got " + out.content());
+            fail("expected RawContent, got " + out.content);
         }
     }
 
@@ -192,10 +192,10 @@ final class ProcessorsTest {
         var proc = new ReplaceText("a", "X", "first");
         var ff = FlowFile.create("banana".getBytes(), Map.of());
         var out = singleOut(proc.process(ff));
-        if (out.content() instanceof RawContent(byte[] bytes)) {
+        if (out.content instanceof RawContent(byte[] bytes)) {
             assertEquals("bXnana", new String(bytes));
         } else {
-            fail("expected RawContent, got " + out.content());
+            fail("expected RawContent, got " + out.content);
         }
     }
 
@@ -204,10 +204,10 @@ final class ProcessorsTest {
         var proc = new ReplaceText("a", "X", "all");
         var ff = FlowFile.create("banana".getBytes(), Map.of());
         var out = singleOut(proc.process(ff));
-        if (out.content() instanceof RawContent(byte[] bytes)) {
+        if (out.content instanceof RawContent(byte[] bytes)) {
             assertEquals("bXnXnX", new String(bytes));
         } else {
-            fail("expected RawContent, got " + out.content());
+            fail("expected RawContent, got " + out.content);
         }
     }
 
@@ -219,7 +219,7 @@ final class ProcessorsTest {
         var ff = FlowFile.create("a,b,c".getBytes(), Map.of());
         var ffs = multiOut(proc.process(ff));
         assertEquals(3, ffs.size());
-        if (ffs.get(1).content() instanceof RawContent(byte[] bytes)) {
+        if (ffs.get(1).content instanceof RawContent(byte[] bytes)) {
             assertEquals("b", new String(bytes));
         } else {
             fail("expected RawContent at index 1");
@@ -256,11 +256,11 @@ final class ProcessorsTest {
         var ffs = multiOut(proc.process(ff));
         // The header "col1,col2\n" prefixes every emitted chunk.
         for (var piece : ffs) {
-            if (piece.content() instanceof RawContent(byte[] bytes)) {
+            if (piece.content instanceof RawContent(byte[] bytes)) {
                 assertTrue(new String(bytes).startsWith("col1,col2\n"),
                         "expected header prepended, got: " + new String(bytes));
             } else {
-                fail("expected RawContent, got " + piece.content());
+                fail("expected RawContent, got " + piece.content);
             }
         }
     }

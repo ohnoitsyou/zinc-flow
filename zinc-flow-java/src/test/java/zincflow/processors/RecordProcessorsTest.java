@@ -19,18 +19,18 @@ final class RecordProcessorsTest {
     void convertJsonArrayToRecords() {
         var ff = FlowFile.create("[{\"id\":1,\"name\":\"a\"},{\"id\":2,\"name\":\"b\"}]".getBytes(), Map.of());
         var out = (ProcessorResult.Single) new ConvertJSONToRecord().process(ff);
-        var rc = (RecordContent) out.flowFile().content();
+        var rc = (RecordContent) out.flowFile.content;
         assertEquals(2, rc.records().size());
         assertEquals(1, ((Number) rc.records().get(0).get("id")).intValue());
         assertEquals("b", rc.records().get(1).get("name"));
-        assertEquals("2", out.flowFile().attributes().get("record.count"));
+        assertEquals("2", out.flowFile.attributes().get("record.count"));
     }
 
     @Test
     void convertJsonSingleObjectWrappedInList() {
         var ff = FlowFile.create("{\"id\":42}".getBytes(), Map.of());
         var out = (ProcessorResult.Single) new ConvertJSONToRecord().process(ff);
-        var rc = (RecordContent) out.flowFile().content();
+        var rc = (RecordContent) out.flowFile.content;
         assertEquals(1, rc.records().size());
     }
 
@@ -56,14 +56,14 @@ final class RecordProcessorsTest {
                 Map.of("id", 2, "name", "b"));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         if (!(new ConvertRecordToJSON().process(ff) instanceof ProcessorResult.Single(FlowFile out))
-                || !(out.content() instanceof RawContent(byte[] jsonBytes))) {
+                || !(out.content instanceof RawContent(byte[] jsonBytes))) {
             fail("ConvertRecordToJSON should emit Single(RawContent)");
             return;
         }
         // Round-trip through ConvertJSONToRecord to avoid map-ordering flakes.
         if (!(new ConvertJSONToRecord().process(FlowFile.create(jsonBytes, Map.of()))
                 instanceof ProcessorResult.Single(FlowFile roundTrip))
-                || !(roundTrip.content() instanceof RecordContent decoded)) {
+                || !(roundTrip.content instanceof RecordContent decoded)) {
             fail("ConvertJSONToRecord should produce Single(RecordContent)");
             return;
         }
@@ -75,8 +75,8 @@ final class RecordProcessorsTest {
         var records = List.<Map<String,Object>>of(Map.of("only", "one"));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var out = (ProcessorResult.Single) new ConvertRecordToJSON(true).process(ff);
-        var raw = (RawContent) out.flowFile().content();
-        String json = new String(raw.bytes());
+        var raw = (RawContent) out.flowFile.content;
+        String json = new String(raw.bytes);
         assertTrue(json.startsWith("{"), "singleObject mode must emit a JSON object, got: " + json);
     }
 
@@ -93,7 +93,7 @@ final class RecordProcessorsTest {
         var records = List.<Map<String,Object>>of(Map.of("tenant", "acme", "other", 1));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var out = (ProcessorResult.Single) new ExtractRecordField("tenant:tenant.id", 0).process(ff);
-        assertEquals("acme", out.flowFile().attributes().get("tenant.id"));
+        assertEquals("acme", out.flowFile.attributes().get("tenant.id"));
     }
 
     @Test
@@ -102,8 +102,8 @@ final class RecordProcessorsTest {
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var out = (ProcessorResult.Single) new ExtractRecordField(
                 "tenant:tenant.id;priority:priority.level", 0).process(ff);
-        assertEquals("acme", out.flowFile().attributes().get("tenant.id"));
-        assertEquals("high", out.flowFile().attributes().get("priority.level"));
+        assertEquals("acme", out.flowFile.attributes().get("tenant.id"));
+        assertEquals("high", out.flowFile.attributes().get("priority.level"));
     }
 
     @Test
@@ -111,7 +111,7 @@ final class RecordProcessorsTest {
         var records = List.<Map<String,Object>>of(Map.of("meta", Map.of("user", Map.of("id", 7))));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var out = (ProcessorResult.Single) new ExtractRecordField("meta.user.id:user.id", 0).process(ff);
-        assertEquals("7", out.flowFile().attributes().get("user.id"));
+        assertEquals("7", out.flowFile.attributes().get("user.id"));
     }
 
     @Test
@@ -122,7 +122,7 @@ final class RecordProcessorsTest {
                 Map.of("tenant", "third"));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var out = (ProcessorResult.Single) new ExtractRecordField("tenant:t", 2).process(ff);
-        assertEquals("third", out.flowFile().attributes().get("t"));
+        assertEquals("third", out.flowFile.attributes().get("t"));
     }
 
     @Test
@@ -132,14 +132,14 @@ final class RecordProcessorsTest {
         var records = List.<Map<String,Object>>of(Map.of("x", "y"));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var out = (ProcessorResult.Single) new ExtractRecordField("missing:out", 0).process(ff);
-        assertFalse(out.flowFile().attributes().containsKey("out"));
+        assertFalse(out.flowFile.attributes().containsKey("out"));
     }
 
     @Test
     void extractFieldEmptyRecordListPassesThrough() {
         var ff = FlowFile.create(new RecordContent(List.of()), Map.of());
         var out = (ProcessorResult.Single) new ExtractRecordField("any:out", 0).process(ff);
-        assertSame(ff, out.flowFile());
+        assertSame(ff, out.flowFile);
     }
 
     @Test
@@ -147,7 +147,7 @@ final class RecordProcessorsTest {
         var records = List.<Map<String,Object>>of(Map.of("tenant", "acme"));
         var ff = FlowFile.create(new RecordContent(records), Map.of());
         var out = (ProcessorResult.Single) new ExtractRecordField("tenant:t", 5).process(ff);
-        assertSame(ff, out.flowFile());
+        assertSame(ff, out.flowFile);
     }
 
     @Test

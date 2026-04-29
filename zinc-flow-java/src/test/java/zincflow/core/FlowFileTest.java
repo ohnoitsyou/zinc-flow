@@ -12,7 +12,7 @@ final class FlowFileTest {
     void createAssignsIncrementingIds() {
         FlowFile a = FlowFile.create(new byte[]{1, 2}, Map.of());
         FlowFile b = FlowFile.create(new byte[]{3, 4}, Map.of());
-        assertTrue(b.id() > a.id(), "id should increment");
+        assertTrue(b.id > a.id, "id should increment");
     }
 
     @Test
@@ -31,29 +31,29 @@ final class FlowFileTest {
         FlowFile next = ff.withAttribute("priority", "high");
         assertEquals("high", next.attributes().get("priority"));
         assertFalse(ff.attributes().containsKey("priority"), "original should be untouched");
-        assertEquals(ff.id(), next.id(), "withAttribute preserves id");
+        assertEquals(ff.id, next.id, "withAttribute preserves id");
     }
 
     @Test
     void withContentSwapsPayloadPreservesAttributes() {
         FlowFile ff = FlowFile.create(new byte[]{1}, Map.of("k", "v"));
         FlowFile next = ff.withContent(new RawContent(new byte[]{7, 8, 9}));
-        assertEquals(3, next.content().size());
+        assertEquals(3, next.content.size());
         assertEquals("v", next.attributes().get("k"));
     }
 
     @Test
     void bumpHopIncrementsCount() {
         FlowFile ff = FlowFile.create(new byte[0], Map.of());
-        assertEquals(0, ff.hopCount());
-        assertEquals(1, ff.bumpHop().hopCount());
-        assertEquals(2, ff.bumpHop().bumpHop().hopCount());
+        assertEquals(0, ff.hopCount);
+        assertEquals(1, ff.bumpHop().hopCount);
+        assertEquals(2, ff.bumpHop().bumpHop().hopCount);
     }
 
     @Test
     void stringIdFormatsAsFfDashId() {
         FlowFile ff = FlowFile.create(new byte[0], Map.of());
-        assertEquals("ff-" + ff.id(), ff.stringId());
+        assertEquals("ff-" + ff.id, ff.stringId());
     }
 
     @Test

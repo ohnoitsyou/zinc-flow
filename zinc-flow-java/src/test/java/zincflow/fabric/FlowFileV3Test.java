@@ -24,13 +24,13 @@ final class FlowFileV3Test {
 
         var result = FlowFileV3.unpack(packed, 0);
         assertTrue(result.ok());
-        assertEquals(packed.length, result.nextOffset());
+        assertEquals(packed.length, result.nextOffset);
 
-        var restored = result.flowFile();
+        var restored = result.flowFile;
         assertEquals("payload.txt", restored.attributes().get("filename"));
         assertEquals("acme", restored.attributes().get("tenant"));
         assertEquals("hello, world",
-                new String(((zincflow.core.RawContent) restored.content()).bytes(), StandardCharsets.UTF_8));
+                new String(((zincflow.core.RawContent) restored.content).bytes, StandardCharsets.UTF_8));
     }
 
     @Test
@@ -54,7 +54,7 @@ final class FlowFileV3Test {
         byte[] garbage = "not a V3 payload".getBytes();
         var result = FlowFileV3.unpack(garbage, 0);
         assertFalse(result.ok());
-        assertTrue(result.error().toLowerCase().contains("magic"));
+        assertTrue(result.error.toLowerCase().contains("magic"));
     }
 
     @Test
@@ -63,8 +63,8 @@ final class FlowFileV3Test {
         byte[] packed = FlowFileV3.pack(ff, new byte[0]);
         var result = FlowFileV3.unpack(packed, 0);
         assertTrue(result.ok());
-        assertEquals("v", result.flowFile().attributes().get("k"));
-        assertEquals(0, result.flowFile().content().size());
+        assertEquals("v", result.flowFile.attributes().get("k"));
+        assertEquals(0, result.flowFile.content.size());
     }
 
     @Test
@@ -73,7 +73,7 @@ final class FlowFileV3Test {
         String big = "x".repeat(70_000);
         var ff = FlowFile.create("p".getBytes(), Map.of("big", big));
         byte[] packed = FlowFileV3.pack(ff, "p".getBytes());
-        var restored = FlowFileV3.unpack(packed, 0).flowFile();
+        var restored = FlowFileV3.unpack(packed, 0).flowFile;
         assertEquals(big, restored.attributes().get("big"));
     }
 

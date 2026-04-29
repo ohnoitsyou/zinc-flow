@@ -21,7 +21,7 @@ final class RegistryVersioningTest {
         r.register("Toy", (cfg, ctx) -> noop());
         assertTrue(r.has("Toy"));
         assertTrue(r.has("Toy@" + Registry.DEFAULT_VERSION));
-        assertEquals(Registry.DEFAULT_VERSION, r.latest("Toy").version());
+        assertEquals(Registry.DEFAULT_VERSION, r.latest("Toy").version);
     }
 
     @Test
@@ -30,7 +30,7 @@ final class RegistryVersioningTest {
         r.register("Toy", "1.0.0", (cfg, ctx) -> noop());
         r.register("Toy", "1.2.0", (cfg, ctx) -> noop());
         r.register("Toy", "1.1.5", (cfg, ctx) -> noop());
-        assertEquals("1.2.0", r.latest("Toy").version());
+        assertEquals("1.2.0", r.latest("Toy").version);
 
         // Unqualified create → latest
         assertNotNull(r.create("Toy", Map.of()));
@@ -57,13 +57,13 @@ final class RegistryVersioningTest {
         List<Registry.TypeInfo> all = r.listAll();
         // Built-ins are present too — filter.
         List<Registry.TypeInfo> ours = all.stream()
-                .filter(t -> t.name().equals("Alpha") || t.name().equals("Beta"))
+                .filter(t -> t.name.equals("Alpha") || t.name.equals("Beta"))
                 .toList();
-        assertEquals("Alpha", ours.get(0).name());
-        assertEquals("1.0.0", ours.get(0).version());
-        assertEquals("Alpha", ours.get(1).name());
-        assertEquals("1.5.0", ours.get(1).version());
-        assertEquals("Beta", ours.get(2).name());
+        assertEquals("Alpha", ours.get(0).name);
+        assertEquals("1.0.0", ours.get(0).version);
+        assertEquals("Alpha", ours.get(1).name);
+        assertEquals("1.5.0", ours.get(1).version);
+        assertEquals("Beta", ours.get(2).name);
     }
 
     @Test
@@ -73,8 +73,8 @@ final class RegistryVersioningTest {
         r.register("Toy", "2.0.0", (cfg, ctx) -> noop());
         List<Registry.TypeInfo> versions = r.listVersions("Toy");
         assertEquals(2, versions.size());
-        assertEquals("1.0.0", versions.get(0).version());
-        assertEquals("2.0.0", versions.get(1).version());
+        assertEquals("1.0.0", versions.get(0).version);
+        assertEquals("2.0.0", versions.get(1).version);
         assertTrue(r.listVersions("Ghost").isEmpty());
     }
 

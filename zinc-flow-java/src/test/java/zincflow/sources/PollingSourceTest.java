@@ -29,7 +29,7 @@ final class PollingSourceTest {
                         Integer.toString(pollCount.get()))));
             }
             @Override protected void onIngested(FlowFile ff) {
-                ingestedIds.add(ff.id());
+                ingestedIds.add(ff.id);
                 ingestedOnce.countDown();
             }
         };

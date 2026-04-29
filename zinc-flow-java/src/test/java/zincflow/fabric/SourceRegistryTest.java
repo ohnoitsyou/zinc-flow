@@ -39,11 +39,11 @@ final class SourceRegistryTest {
         r.register(new SourceRegistry.TypeInfo("A", "2.0.0", "", List.of()), (n, c) -> new NoopSource(n));
         r.register(new SourceRegistry.TypeInfo("A", "1.0.0", "", List.of()), (n, c) -> new NoopSource(n));
         var all = r.listAll();
-        assertEquals("A", all.get(0).name());
-        assertEquals("1.0.0", all.get(0).version());
-        assertEquals("A", all.get(1).name());
-        assertEquals("2.0.0", all.get(1).version());
-        assertEquals("B", all.get(2).name());
+        assertEquals("A", all.get(0).name);
+        assertEquals("1.0.0", all.get(0).version);
+        assertEquals("A", all.get(1).name);
+        assertEquals("2.0.0", all.get(1).version);
+        assertEquals("B", all.get(2).name);
     }
 
     @Test

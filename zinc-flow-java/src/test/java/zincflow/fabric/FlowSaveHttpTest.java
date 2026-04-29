@@ -70,7 +70,7 @@ final class FlowSaveHttpTest {
 
     @Test
     void flowSaveWithoutLoaderReturns501() throws Exception {
-        var pipeline = new Pipeline(PipelineGraph.empty());
+        var pipeline = new Pipeline(PipelineGraphKt.empty());
         server = new HttpServer(pipeline).start(0);
         var resp = post("/api/flow/save", "");
         assertEquals(501, resp.statusCode());

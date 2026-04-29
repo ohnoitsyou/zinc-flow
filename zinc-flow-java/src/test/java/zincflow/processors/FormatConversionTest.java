@@ -23,11 +23,11 @@ final class FormatConversionTest {
     void csvHeaderRowParse() {
         var ff = FlowFile.create("name,age\nAlice,30\nBob,25".getBytes(StandardCharsets.UTF_8), Map.of());
         var out = (ProcessorResult.Single) new ConvertCSVToRecord().process(ff);
-        var rc = (RecordContent) out.flowFile().content();
+        var rc = (RecordContent) out.flowFile.content;
         assertEquals(2, rc.records().size());
         assertEquals("Alice", rc.records().get(0).get("name"));
         assertEquals("25", rc.records().get(1).get("age"));
-        assertEquals("2", out.flowFile().attributes().get("record.count"));
+        assertEquals("2", out.flowFile.attributes().get("record.count"));
     }
 
     @Test
@@ -35,7 +35,7 @@ final class FormatConversionTest {
         var body = "name\tage\nAlice\t30".getBytes(StandardCharsets.UTF_8);
         var ff = FlowFile.create(body, Map.of());
         var out = (ProcessorResult.Single) new ConvertCSVToRecord("", '\t', true, "").process(ff);
-        var rc = (RecordContent) out.flowFile().content();
+        var rc = (RecordContent) out.flowFile.content;
         assertEquals("Alice", rc.records().getFirst().get("name"));
     }
 
@@ -44,7 +44,7 @@ final class FormatConversionTest {
         var body = "name,note\n\"Smith, Jr.\",\"has, commas\"".getBytes(StandardCharsets.UTF_8);
         var ff = FlowFile.create(body, Map.of());
         var out = (ProcessorResult.Single) new ConvertCSVToRecord().process(ff);
-        var rc = (RecordContent) out.flowFile().content();
+        var rc = (RecordContent) out.flowFile.content;
         assertEquals("Smith, Jr.", rc.records().getFirst().get("name"));
         assertEquals("has, commas", rc.records().getFirst().get("note"));
     }
@@ -55,11 +55,11 @@ final class FormatConversionTest {
         var ff = FlowFile.create("alice,30\nbob,25".getBytes(), Map.of());
         var out = (ProcessorResult.Single) new ConvertCSVToRecord(
                 "User", ',', false, "name:string,age:int").process(ff);
-        var rc = (RecordContent) out.flowFile().content();
-        assertNotNull(rc.schema());
-        assertEquals("User", rc.schema().getName());
-        assertEquals(2, rc.schema().getFields().size());
-        assertEquals("age", rc.schema().getFields().get(1).name());
+        var rc = (RecordContent) out.flowFile.content;
+        assertNotNull(rc.schema);
+        assertEquals("User", rc.schema.getName());
+        assertEquals(2, rc.schema.getFields().size());
+        assertEquals("age", rc.schema.getFields().get(1).name());
     }
 
     @Test
@@ -67,9 +67,9 @@ final class FormatConversionTest {
         // JSON → Record → CSV → Record — values should line up.
         var jsonFf = FlowFile.create("[{\"id\":\"1\",\"name\":\"a\"},{\"id\":\"2\",\"name\":\"b\"}]".getBytes(), Map.of());
         var afterJson = (ProcessorResult.Single) new ConvertJSONToRecord().process(jsonFf);
-        var afterCsv  = (ProcessorResult.Single) new ConvertRecordToCSV().process(afterJson.flowFile());
-        var afterRead = (ProcessorResult.Single) new ConvertCSVToRecord().process(afterCsv.flowFile());
-        var rc = (RecordContent) afterRead.flowFile().content();
+        var afterCsv  = (ProcessorResult.Single) new ConvertRecordToCSV().process(afterJson.flowFile);
+        var afterRead = (ProcessorResult.Single) new ConvertCSVToRecord().process(afterCsv.flowFile);
+        var rc = (RecordContent) afterRead.flowFile.content;
         assertEquals(2, rc.records().size());
         assertEquals("1", rc.records().get(0).get("id"));
         assertEquals("b", rc.records().get(1).get("name"));
@@ -98,8 +98,8 @@ final class FormatConversionTest {
         var ff = FlowFile.create(new RecordContent(List.of(record), schema), Map.of());
 
         var encoded = (ProcessorResult.Single) new ConvertRecordToAvro().process(ff);
-        var decoded = (ProcessorResult.Single) new ConvertAvroToRecord("User", SIMPLE_FIELDS).process(encoded.flowFile());
-        var rc = (RecordContent) decoded.flowFile().content();
+        var decoded = (ProcessorResult.Single) new ConvertAvroToRecord("User", SIMPLE_FIELDS).process(encoded.flowFile);
+        var rc = (RecordContent) decoded.flowFile.content;
 
         assertEquals(1, rc.records().size());
         assertEquals(7L, rc.records().getFirst().get("id"));
@@ -116,8 +116,8 @@ final class FormatConversionTest {
                 flat(3L, "c", true));
         var ff = FlowFile.create(new RecordContent(records, schema), Map.of());
         var encoded = (ProcessorResult.Single) new ConvertRecordToAvro().process(ff);
-        var decoded = (ProcessorResult.Single) new ConvertAvroToRecord("User", SIMPLE_FIELDS).process(encoded.flowFile());
-        var rc = (RecordContent) decoded.flowFile().content();
+        var decoded = (ProcessorResult.Single) new ConvertAvroToRecord("User", SIMPLE_FIELDS).process(encoded.flowFile);
+        var rc = (RecordContent) decoded.flowFile.content;
         assertEquals(3, rc.records().size());
         assertEquals("b", rc.records().get(1).get("name"));
     }
@@ -161,8 +161,8 @@ final class FormatConversionTest {
         // primitives. Nested round-trip on the binary side requires carrying
         // the schema separately (OCF test covers that); here we just verify
         // the encoded bytes are non-empty.
-        var raw = (zincflow.core.RawContent) encoded.flowFile().content();
-        assertTrue(raw.bytes().length > 0);
+        var raw = (zincflow.core.RawContent) encoded.flowFile.content;
+        assertTrue(raw.bytes.length > 0);
     }
 
     @Test
@@ -172,10 +172,10 @@ final class FormatConversionTest {
         Schema schema = SchemaDefs.parse("User", SIMPLE_FIELDS);
         var ff = FlowFile.create(new RecordContent(List.of(flat(9L, "z", false)), schema), Map.of());
         var encoded = (ProcessorResult.Single) new ConvertRecordToAvro().process(ff);
-        assertEquals(SIMPLE_FIELDS, encoded.flowFile().attributes().get("avro.schema"));
+        assertEquals(SIMPLE_FIELDS, encoded.flowFile.attributes().get("avro.schema"));
 
-        var decoded = (ProcessorResult.Single) new ConvertAvroToRecord("", "").process(encoded.flowFile());
-        var rc = (RecordContent) decoded.flowFile().content();
+        var decoded = (ProcessorResult.Single) new ConvertAvroToRecord("", "").process(encoded.flowFile);
+        var rc = (RecordContent) decoded.flowFile.content;
         assertEquals("z", rc.records().getFirst().get("name"));
     }
 
@@ -216,13 +216,13 @@ final class FormatConversionTest {
         var ff = FlowFile.create(new RecordContent(List.of(record), schema), Map.of());
 
         var written = (ProcessorResult.Single) new ConvertRecordToOCF().process(ff);
-        var read    = (ProcessorResult.Single) new ConvertOCFToRecord().process(written.flowFile());
-        var rc = (RecordContent) read.flowFile().content();
+        var read    = (ProcessorResult.Single) new ConvertOCFToRecord().process(written.flowFile);
+        var rc = (RecordContent) read.flowFile.content;
 
         assertEquals(1, rc.records().size());
         assertEquals("alice", rc.records().getFirst().get("name"));
         // Schema surfaces as an attribute for downstream use.
-        assertTrue(read.flowFile().attributes().get("avro.schema").contains("\"name\":\"User\""));
+        assertTrue(read.flowFile.attributes().get("avro.schema").contains("\"name\":\"User\""));
     }
 
     @Test
@@ -246,7 +246,7 @@ final class FormatConversionTest {
         // SingleResult.Rent(ff) early-return). No OCF bytes produced.
         var ff = FlowFile.create(new RecordContent(List.of()), Map.of());
         var written = (ProcessorResult.Single) new ConvertRecordToOCF().process(ff);
-        assertSame(ff, written.flowFile());
+        assertSame(ff, written.flowFile);
     }
 
     @Test

@@ -28,7 +28,7 @@ final class ProvenanceFailuresHttpTest {
         prov.enable();
         var context = new ProcessorContext();
         context.addProvider(prov);
-        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
+        var pipeline = new Pipeline(PipelineGraphKt.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
         server = new HttpServer(pipeline).start(0);
     }
 
@@ -91,7 +91,7 @@ final class ProvenanceFailuresHttpTest {
     @Test
     void lineageWithoutProviderReturns503() throws Exception {
         server.stop();
-        var pipeline = new Pipeline(PipelineGraph.empty());
+        var pipeline = new Pipeline(PipelineGraphKt.empty());
         server = new HttpServer(pipeline).start(0);
         var resp = get("/api/provenance/1");
         assertEquals(503, resp.statusCode());

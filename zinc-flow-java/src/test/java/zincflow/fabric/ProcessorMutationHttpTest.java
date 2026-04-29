@@ -1,6 +1,5 @@
 package zincflow.fabric;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +25,7 @@ final class ProcessorMutationHttpTest {
     void boot() {
         var registry = new Registry();
         var context = new ProcessorContext();
-        pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
+        pipeline = new Pipeline(PipelineGraphKt.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
         pipeline.addProcessor("router", "RouteOnAttribute",
                 java.util.Map.of("routes", "high: priority == urgent"),
                 java.util.List.of(), java.util.Map.of());

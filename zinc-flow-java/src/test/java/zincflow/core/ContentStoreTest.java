@@ -35,8 +35,8 @@ final class ContentStoreTest {
     @Test
     void claimContentHoldsMetadata() {
         var claim = new ClaimContent("mem-claim-7", 1024);
-        assertEquals("mem-claim-7", claim.claimId());
-        assertEquals(1024, claim.size());
+        assertEquals("mem-claim-7", claim.claimId);
+        assertEquals(1024, claim.size);
     }
 
     @Test
@@ -51,7 +51,7 @@ final class ContentStoreTest {
         byte[] data = "raw".getBytes();
         var res = ContentResolver.resolve(new RawContent(data), null);
         assertTrue(res.ok());
-        assertArrayEquals(data, res.bytes());
+        assertArrayEquals(data, res.bytes);
     }
 
     @Test
@@ -61,7 +61,7 @@ final class ContentStoreTest {
         String id = store.store(data);
         var res = ContentResolver.resolve(new ClaimContent(id, data.length), store);
         assertTrue(res.ok());
-        assertArrayEquals(data, res.bytes());
+        assertArrayEquals(data, res.bytes);
     }
 
     @Test

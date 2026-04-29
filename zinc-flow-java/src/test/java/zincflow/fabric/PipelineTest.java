@@ -31,7 +31,7 @@ final class PipelineTest {
     @Test
     void ingestFlowsThroughSuccessConnections() {
         var sink = new CapturingSink();
-        var graph = new PipelineGraph(
+        var graph = new PipelineGraphKt(
                 Map.of(
                         "mark",  new UpdateAttribute("stage", "processed"),
                         "sink",  sink),
@@ -49,7 +49,7 @@ final class PipelineTest {
 
     @Test
     void missingEntryPointsWarnButDoNotThrow() {
-        var graph = PipelineGraph.empty();
+        var graph = PipelineGraphKt.empty();
         var pipeline = new Pipeline(graph);
         assertDoesNotThrow(() -> pipeline.ingest(FlowFile.create(new byte[0], Map.of())));
     }
@@ -58,7 +58,7 @@ final class PipelineTest {
     void processorExceptionRoutesToFailureWhenWired() {
         Processor boom = ff -> { throw new RuntimeException("kaboom"); };
         var failureSink = new CapturingSink();
-        var graph = new PipelineGraph(
+        var graph = new PipelineGraphKt(
                 Map.of("boom", boom, "onFail", failureSink),
                 Map.of("boom", Map.of("failure", List.of("onFail"))),
                 List.of("boom"));
@@ -72,7 +72,7 @@ final class PipelineTest {
     @Test
     void processorExceptionWithNoFailureWiringDropsCleanly() {
         Processor boom = ff -> { throw new RuntimeException("kaboom"); };
-        var graph = new PipelineGraph(
+        var graph = new PipelineGraphKt(
                 Map.of("boom", boom),
                 Map.of(),
                 List.of("boom"));
@@ -85,7 +85,7 @@ final class PipelineTest {
     void maxHopsCapsRunawayCycles() {
         // A processor that bumps the stage count and loops back to itself.
         Processor loop = ff -> ProcessorResult.single(ff);
-        var graph = new PipelineGraph(
+        var graph = new PipelineGraphKt(
                 Map.of("loop", loop),
                 Map.of("loop", Map.of("success", List.of("loop"))),
                 List.of("loop"));

@@ -52,7 +52,7 @@ final class HttpServerAdminTest {
         context.addProvider(prov);
 
         var registry = new Registry();
-        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
+        var pipeline = new Pipeline(PipelineGraphKt.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
         server = new HttpServer(pipeline).start(0);
         return server;
     }
@@ -156,7 +156,7 @@ final class HttpServerAdminTest {
         // Boot a server whose context has no provenance provider — we need to
         // build a bespoke one rather than reuse boot().
         var context = new ProcessorContext();
-        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
+        var pipeline = new Pipeline(PipelineGraphKt.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
         server = new HttpServer(pipeline).start(0);
         var resp = get("/api/provenance");
         assertEquals(503, resp.statusCode());

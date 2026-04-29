@@ -16,9 +16,9 @@ final class ConfigOverlayTest {
         Path base = dir.resolve("config.yaml");
         Files.writeString(base, "flow:\n  entryPoints: [a]\n");
         var resolved = ConfigOverlay.load(base);
-        assertTrue(resolved.layers().stream().anyMatch(l -> "base".equals(l.role()) && l.present()));
-        assertTrue(resolved.layers().stream().anyMatch(l -> "local".equals(l.role()) && !l.present()));
-        assertTrue(resolved.layers().stream().anyMatch(l -> "secrets".equals(l.role()) && !l.present()));
+        assertTrue(resolved.layers().stream().anyMatch(l -> "base".equals(l.role) && l.present));
+        assertTrue(resolved.layers().stream().anyMatch(l -> "local".equals(l.role) && !l.present));
+        assertTrue(resolved.layers().stream().anyMatch(l -> "secrets".equals(l.role) && !l.present));
     }
 
     @Test

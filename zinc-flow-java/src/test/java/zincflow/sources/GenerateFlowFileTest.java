@@ -24,9 +24,9 @@ final class GenerateFlowFileTest {
             assertEquals("dev", ff.attributes().get("env"));
             assertEquals("acme", ff.attributes().get("tenant"));
             assertNotNull(ff.attributes().get("generate.index"));
-            assertInstanceOf(RawContent.class, ff.content());
+            assertInstanceOf(RawContent.class, ff.content);
             assertArrayEquals("hello".getBytes(StandardCharsets.UTF_8),
-                    ((RawContent) ff.content()).bytes());
+                    ((RawContent) ff.content).bytes);
         }
         // indexes are distinct and strictly increasing within a batch
         long i0 = Long.parseLong(batch.get(0).attributes().get("generate.index"));
