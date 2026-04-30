@@ -41,51 +41,35 @@ import java.util.concurrent.ConcurrentHashMap
  * 
  * Mirrors zinc-flow-csharp's GetFile. */
 class GetFile(
-    name: String?, inputDir: Path, pattern: String?,
-    pollIntervalMillis: Long, unpackV3: Boolean
+    name: String,
+    val inputDir: Path,
+    pattern: String?,
+    pollIntervalMillis: Long,
+    val unpackV3: Boolean,
+    override val isRunning: Boolean
 ) : PollingSource(name, pollIntervalMillis) {
-    private val inputDir: Path
-    private val pattern: String
-    private val unpackV3: Boolean
-    private val processedDir: Path
+    private val pattern: String = if (pattern.isNullOrEmpty()) "*" else pattern
+    val processedDir: Path = inputDir.resolve(PROCESSED_DIR)
 
     // filename-per-FlowFile so onIngested can move the right source
     // file. We can't key on attrs because V3 unpacking emits N FlowFiles
     // per file and we only move the underlying file once all N land.
-    private val pendingMoves: MutableMap<Long?, Path?> = ConcurrentHashMap<Long?, Path?>()
-    private val outstandingPerFile: MutableMap<Path?, Int?> = ConcurrentHashMap<Path?, Int?>()
+    private val pendingMoves = mutableMapOf<Long, Path>()
+    private val outstandingPerFile = mutableMapOf<Path, Int>()
 
-    init {
-        requireNotNull(inputDir) { "inputDir must not be null" }
-        this.inputDir = inputDir
-        this.pattern = if (pattern == null || pattern.isEmpty()) "*" else pattern
-        this.unpackV3 = unpackV3
-        this.processedDir = inputDir.resolve(PROCESSED_DIR)
-    }
+    override fun sourceType(): String = TYPE
 
-    override fun sourceType(): String {
-        return TYPE
-    }
-
-    fun inputDir(): Path {
-        return inputDir
-    }
-
-    fun processedDir(): Path {
-        return processedDir
-    }
-
-    public override fun poll(): MutableList<FlowFile?> {
+    public override fun poll(): MutableList<FlowFile> {
         ensureDirs()
-        val out: MutableList<FlowFile?> = ArrayList<FlowFile?>()
+        val out = mutableListOf<FlowFile>()
         try {
             Files.newDirectoryStream(inputDir, pattern).use { stream ->
                 for (entry in stream) {
                     if (Files.isDirectory(entry)) continue
                     val emitted = emitFor(entry)
                     if (!emitted.isEmpty()) {
-                        outstandingPerFile.put(entry, emitted.size)
-                        for (ff in emitted) pendingMoves.put(ff.id, entry)
+                        outstandingPerFile[entry] = emitted.size
+                        for (ff in emitted) pendingMoves[ff.id] = entry
                         out.addAll(emitted)
                     }
                 }
@@ -97,15 +81,14 @@ class GetFile(
     }
 
     private fun emitFor(file: Path): MutableList<FlowFile> {
-        val bytes: ByteArray?
-        try {
-            bytes = Files.readAllBytes(file)
+        val bytes: ByteArray = try {
+            Files.readAllBytes(file)
         } catch (ex: IOException) {
             // File might have been removed or partially written between
             // the listing and the read — skip this round, the next poll
             // picks it up.
             log.debug("GetFile {}: could not read {} ({}) — skipping", name(), file, ex.toString())
-            return mutableListOf<FlowFile?>()
+            return mutableListOf()
         }
 
         if (unpackV3 && looksLikeV3(bytes)) {
@@ -113,7 +96,7 @@ class GetFile(
             if (!frames.isEmpty()) {
                 val out: MutableList<FlowFile> = ArrayList<FlowFile>(frames.size)
                 for (i in frames.indices) {
-                    out.add(addAttrs(frames.get(i)!!, file, bytes.size.toLong(), true, i, frames.size))
+                    out.add(addAttrs(frames[i]!!, file, bytes.size.toLong(), true, i, frames.size))
                 }
                 return out
             }
@@ -122,14 +105,14 @@ class GetFile(
             // hide bugs; treating it as raw surfaces the bytes for ops.
         }
 
-        return List.of<FlowFile?>(
+        return mutableListOf(
             addAttrs(
-                FlowFile.create(bytes, Map.of<String?, String?>()),
+                FlowFile.create(bytes, mutableMapOf()),
                 file,
                 bytes.size.toLong(),
-                false,
-                0,
-                1
+                v3 = false,
+                frameIndex = 0,
+                frameCount = 1
             )
         )
     }

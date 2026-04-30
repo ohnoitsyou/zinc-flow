@@ -14,27 +14,23 @@ object ContentHelpers {
      * store round-trip; anything smaller stays inline where the CPU
      * cost of hashing, sharding, and syscalls would outweigh heap
      * pressure. Tunable per call by passing an explicit threshold. */
-    @JvmField
-    val DEFAULT_CLAIM_THRESHOLD: Int = 256 * 1024
+    const val DEFAULT_CLAIM_THRESHOLD: Int = 256 * 1024
 
     /** If `data` is under the threshold, wrap it in a
      * [RawContent]; otherwise push it into the store and return
      * a [ClaimContent]. A null store forces the inline path —
      * callers without a store (tests, small pipelines) get the small
      * behavior automatically. */
-    @JvmStatic
     fun maybeOffload(store: ContentStore?, data: ByteArray?): Content {
         return maybeOffload(store, data, DEFAULT_CLAIM_THRESHOLD)
     }
 
-    @JvmStatic
     fun maybeOffload(store: ContentStore?, data: ByteArray?, threshold: Int): Content {
-        var data = data
-        if (data == null) data = ByteArray(0)
-        if (store == null || data.size <= threshold) {
-            return RawContent(data)
+        val bytes = data ?: ByteArray(0)
+        if (store == null || bytes.size <= threshold) {
+            return RawContent(bytes)
         }
-        val claimId = store.store(data)
-        return ClaimContent(claimId, data.size)
+        val claimId = store.store(bytes)
+        return ClaimContent(claimId, bytes.size)
     }
 }

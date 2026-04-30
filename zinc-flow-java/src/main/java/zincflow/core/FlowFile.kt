@@ -7,7 +7,6 @@ import kotlin.collections.toMap
  * `withAttribute` / `withContent` helpers produce a new
  * FlowFile rather than mutating. Attribute map is defensively copied on
  * construction. */
-@ConsistentCopyVisibility
 data class FlowFile private constructor(
     val id: Long,
     val attributes: Map<String, String>,

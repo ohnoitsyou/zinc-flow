@@ -11,9 +11,9 @@ import java.util.function.Predicate
  * 
  * Mirrors zinc-flow-csharp's IConnectorSource. */
 interface Source {
-    fun name(): String?
+    fun name(): String
 
-    fun sourceType(): String?
+    fun sourceType(): String
 
     val isRunning: Boolean
 
@@ -21,7 +21,7 @@ interface Source {
      * returns whether the pipeline accepted the submission. Sources
      * must be idempotent w.r.t. `start` — calling twice with the
      * source already running is a no-op. */
-    fun start(ingest: Predicate<FlowFile?>?)
+    fun start(ingest: (FlowFile) -> Boolean)
 
     fun stop()
 }

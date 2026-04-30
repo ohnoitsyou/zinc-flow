@@ -33,77 +33,69 @@ import java.util.concurrent.atomic.AtomicLong
  * 
  * Mirrors zinc-flow-csharp's GenerateFlowFile. */
 class GenerateFlowFile(
-    name: String?, pollIntervalMillis: Long,
-    content: String?, contentType: String?,
-    attributes: String?, batchSize: Int
+    name: String,
+    pollIntervalMillis: Long,
+    content: String?,
+    contentType: String?,
+    attributesAsString: String = "",
+    batchSize: Int = 1,
+    override val isRunning: Boolean = false
 ) : PollingSource(name, pollIntervalMillis) {
-    private val content: ByteArray
-    private val baseAttributes: MutableMap<String?, String?>
-    private val batchSize: Int
+    private val content: ByteArray = (content ?: "").toByteArray(StandardCharsets.UTF_8)
+    private val baseAttributes: Map<String, String> = buildAttributes(name, contentType ?: "", attributesAsString)
     private val index = AtomicLong()
+    private val batchSize = batchSize.coerceAtLeast(1)
 
-    init {
-        this.content = (if (content == null) "" else content).toByteArray(StandardCharsets.UTF_8)
-        this.batchSize = if (batchSize <= 0) 1 else batchSize
-        this.baseAttributes = buildAttributes(name, contentType, attributes)
-    }
+    override fun sourceType(): String = TYPE
 
-    override fun sourceType(): String {
-        return TYPE
-    }
-
-    public override fun poll(): MutableList<FlowFile?> {
-        val out: MutableList<FlowFile?> = ArrayList<FlowFile?>(batchSize)
-        for (i in 0..<batchSize) {
-            val attrs: MutableMap<String?, String?> = LinkedHashMap<String?, String?>(baseAttributes)
-            attrs.put(FlowFileAttributes.GENERATE_INDEX, index.incrementAndGet().toString())
-            out.add(FlowFile.create(content, attrs))
-        }
-        return out
+    override fun poll(): MutableList<FlowFile> {
+        return buildList {
+            repeat(batchSize) {
+                val attrs = baseAttributes.toMutableMap()
+                attrs[FlowFileAttributes.GENERATE_INDEX] = index.incrementAndGet().toString()
+                add(FlowFile.create(content, attrs))
+            }
+        }.toMutableList()
     }
 
     /** SPI entry for ServiceLoader discovery. Both the built-in
      * bootstrap and any plugin jar pick up the source through this
      * class, so there's one discovery path across all source sources. */
     class Plugin : SourcePlugin {
-        override fun sourceType(): String {
-            return TYPE
-        }
+        override fun sourceType(): String = TYPE
 
-        override fun description(): String {
-            return "Timer-driven FlowFile generator for heartbeats and load tests."
-        }
+        override fun description(): String =
+            "Timer-driven FlowFile generator for heartbeats and load tests."
 
-        override fun configKeys(): MutableList<String?> {
-            return mutableListOf<String?>("content", "contentType", "attributes", "batchSize", "pollIntervalMs")
-        }
+        override fun configKeys(): MutableList<String> =
+            mutableListOf("content", "contentType", "attributes", "batchSize", "pollIntervalMs")
 
-        override fun create(name: String?, config: MutableMap<String?, Any?>): Source? {
-            val content: String = str(config.get("content"))
+        override fun create(name: String, config: MutableMap<String, Any?>): Source? {
+            val content = str(config["content"])
             if (content.isEmpty()) return null // disabled when content is absent
 
             return GenerateFlowFile(
                 name,
-                longOr(config.get("pollIntervalMs"), 1000),
+                longOr(config["pollIntervalMs"], 1000),
                 content,
-                str(config.get("contentType")),
-                str(config.get("attributes")),
-                longOr(config.get("batchSize"), 1).toInt()
+                str(config["contentType"]),
+                str(config["attributes"]),
+                longOr(config["batchSize"], 1).toInt()
             )
         }
 
         companion object {
             private fun str(o: Any?): String {
-                return if (o == null) "" else o.toString()
+                return o?.toString() ?: ""
             }
 
             private fun longOr(o: Any?, fallback: Long): Long {
                 if (o == null) return fallback
                 if (o is Number) return o.toLong()
-                try {
-                    return o.toString().trim { it <= ' ' }.toLong()
-                } catch (ex: NumberFormatException) {
-                    return fallback
+                return try {
+                    o.toString().trim().toLong()
+                } catch (_: NumberFormatException) {
+                    fallback
                 }
             }
         }
@@ -113,24 +105,21 @@ class GenerateFlowFile(
         const val NAME: String = "generate"
         const val TYPE: String = "GenerateFlowFile"
 
-        private fun buildAttributes(name: String?, contentType: String?, spec: String?): MutableMap<String?, String?> {
-            val out: MutableMap<String?, String?> = LinkedHashMap<String?, String?>()
-            out.put(FlowFileAttributes.SOURCE, name)
-            if (contentType != null && !contentType.isEmpty()) {
-                out.put(FlowFileAttributes.HTTP_CONTENT_TYPE, contentType)
+        private const val ATTRIBUTE_SEPARATOR = ";"
+        private const val KEY_VALUE_SEPARATOR = ":"
+
+        private fun buildAttributes(name: String, contentType: String, attributeString: String): Map<String, String> {
+            return buildMap {
+                put(FlowFileAttributes.SOURCE, name)
+                if(contentType.isNotEmpty()) put(FlowFileAttributes.HTTP_CONTENT_TYPE, contentType)
+                if(attributeString.isNotBlank()) {
+                    for (pair in attributeString.split(ATTRIBUTE_SEPARATOR).dropLastWhile { it.isEmpty() }) {
+                        val trimmed = pair.trim()
+                        if (trimmed.isEmpty() || !trimmed.contains(KEY_VALUE_SEPARATOR)) continue
+                        put(trimmed.substringBefore(KEY_VALUE_SEPARATOR).trim(), trimmed.substringAfter(KEY_VALUE_SEPARATOR).trim())
+                    }
+                }
             }
-            if (spec == null || spec.isBlank()) return out
-            // "key:value;key:value" — permissive: ignore entries without a
-            // colon instead of throwing, so a minor config typo doesn't
-            // crash boot. An empty value is a legal attribute.
-            for (pair in spec.split(";".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()) {
-                val trimmed = pair.trim { it <= ' ' }
-                if (trimmed.isEmpty()) continue
-                val idx = trimmed.indexOf(':')
-                if (idx <= 0) continue
-                out.put(trimmed.substring(0, idx).trim { it <= ' ' }, trimmed.substring(idx + 1).trim { it <= ' ' })
-            }
-            return out
         }
     }
 }

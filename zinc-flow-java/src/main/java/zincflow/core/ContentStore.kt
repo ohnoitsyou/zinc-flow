@@ -17,39 +17,32 @@ import java.io.InputStream
 interface ContentStore {
     /** Store a blob; return a stable claim id that can later be used to
      * [.retrieve] the same bytes. */
-    fun store(data: ByteArray?): String?
+    fun store(data: ByteArray): String
 
     /** Stream store — useful for large payloads; reads the input fully
      * without buffering the whole thing in memory. Default delegates
      * to [.store] for implementations that don't have a
      * native streaming path. */
     @Throws(IOException::class)
-    fun store(`in`: InputStream): String? {
-        return store(`in`.readAllBytes())
-    }
+    fun store(inStream: InputStream): String? = store(inStream.readAllBytes())
 
     /** Return the bytes previously stored under `claimId`, or an
      * empty array if the claim is unknown (deleted, or never existed). */
-    fun retrieve(claimId: String?): ByteArray
+    fun retrieve(claimId: String): ByteArray
 
     /** Stream the claim back. Default wraps [.retrieve];
      * disk-backed stores override to avoid loading the whole blob
      * into memory. */
     @Throws(IOException::class)
-    fun openRead(claimId: String?): InputStream {
-        return ByteArrayInputStream(retrieve(claimId))
-    }
+    fun openRead(claimId: String): InputStream = ByteArrayInputStream(retrieve(claimId))
 
     /** Size in bytes of the stored claim, or `-1` when the store
      * doesn't know (e.g. a streaming source that hasn't been counted).
      * Default reads through [.retrieve] and returns its length. */
-    fun size(claimId: String?): Long {
-        val b = retrieve(claimId)
-        return b.size.toLong()
-    }
+    fun size(claimId: String): Long = retrieve(claimId).size.toLong()
 
     /** Remove a claim. No-op if the claim doesn't exist. */
-    fun delete(claimId: String?)
+    fun delete(claimId: String)
 
-    fun exists(claimId: String?): Boolean
+    fun exists(claimId: String): Boolean
 }

@@ -22,30 +22,25 @@ import java.util.concurrent.TimeUnit
  * codepath simple.
  * 
  * Mirror of zinc-flow-csharp's ContentStoreCleanup. */
-class ContentStoreCleanup(store: ContentStore) {
-    private val store: ContentStore
-    private val active: MutableSet<String?> = HashSet<String?>()
+class ContentStoreCleanup(private val store: ContentStore) {
+    private val active = mutableSetOf<String>()
     private val lock = Any()
-    private var scheduler: ScheduledExecutorService? = null
-    private var running: ScheduledFuture<*>? = null
+    private var scheduler: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon().name("zinc-flow-content-cleanup").factory())
 
-    init {
-        requireNotNull(store) { "ContentStoreCleanup: store must not be null" }
-        this.store = store
-    }
+    private var running: ScheduledFuture<*>? = null
 
     /** Register a claim that's now live. Safe to call from any thread
      * — typically from [ContentHelpers.maybeOffload] or wherever
      * else a new ClaimContent is created. */
-    fun track(claimId: String?) {
-        if (claimId == null || claimId.isEmpty()) return
+    fun track(claimId: String) {
+        if (claimId.isEmpty()) return
         synchronized(lock) { active.add(claimId) }
     }
 
     /** Mark a claim as releasable. The next sweep will delete it from
      * the store if it isn't re-tracked before then. */
-    fun release(claimId: String?) {
-        if (claimId == null) return
+    fun release(claimId: String) {
         synchronized(lock) { active.remove(claimId) }
     }
 
@@ -56,24 +51,25 @@ class ContentStoreCleanup(store: ContentStore) {
     /** Delete any claim known to the store that isn't currently in the
      * active set. Returns the number deleted — callers can log or
      * metric-ize this without having to subscribe to logging. */
-    fun sweep(knownClaims: MutableList<String?>?): Int {
-        if (knownClaims == null || knownClaims.isEmpty()) return 0
-        val snapshot: MutableSet<String?>?
-        synchronized(lock) { snapshot = Set.copyOf<String?>(active) }
-        var deleted = 0
-        for (claimId in knownClaims) {
-            if (!snapshot!!.contains(claimId)) {
+    fun sweep(knownClaims: MutableList<String>): Int {
+        if (knownClaims.isEmpty()) return 0
+        val snapshot: MutableSet<String> = synchronized(lock) { active.toMutableSet() }
+        return knownClaims.fold(0) { acc, claim ->
+            if(snapshot.contains(claim)) {
                 try {
-                    store.delete(claimId)
-                    deleted++
+                    store.delete(claim)
+                    acc.inc()
                 } catch (ex: RuntimeException) {
-                    log.warn("content-cleanup: failed to delete {} — {}", claimId, ex.toString())
+                    log.warn("content-cleanup: failed to delete $claim — $ex")
+                    acc
                 }
+            } else {
+                acc
             }
         }
-        return deleted
     }
 
+    // TODO: Convert to use coroutines
     /** Start a periodic sweep. Caller provides a [ClaimEnumerator]
      * that returns every claim the store currently holds — disk-backed
      * stores walk the directory, memory stores enumerate the map.
@@ -85,11 +81,8 @@ class ContentStoreCleanup(store: ContentStore) {
         // park/unpark). The sweep body runs on a virtual thread so a
         // slow enumerator or a disk hiccup on delete can't stall the
         // next tick.
-        scheduler = Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().daemon().name("zinc-flow-content-cleanup").factory()
-        )
-        running = scheduler!!.scheduleAtFixedRate(
-            Runnable { Thread.startVirtualThread(Runnable { runSweep(enumerator) }) },
+        running = scheduler.scheduleAtFixedRate(
+            { Thread.startVirtualThread { runSweep(enumerator) } },
             period, period, unit
         )
     }
@@ -98,26 +91,22 @@ class ContentStoreCleanup(store: ContentStore) {
         try {
             val deleted = sweep(enumerator.enumerate())
             if (deleted > 0) {
-                log.info("content-cleanup: swept {} orphaned claim(s)", deleted)
+                log.info("content-cleanup: swept $deleted orphaned claim(s)")
+            } else {
+                log.info("content-cleanup: no orphaned files to sweep")
             }
         } catch (ex: RuntimeException) {
-            log.warn("content-cleanup: sweep failed — {}", ex.toString())
+            log.warn("content-cleanup: sweep failed — $ex")
         }
     }
 
     fun stopPeriodicSweep() {
-        if (running != null) {
-            running!!.cancel(false)
-            running = null
-        }
-        if (scheduler != null) {
-            scheduler!!.shutdown()
-            scheduler = null
-        }
+        running?.cancel(false)
+        scheduler.shutdown()
     }
 
     fun interface ClaimEnumerator {
-        fun enumerate(): MutableList<String?>?
+        fun enumerate(): MutableList<String>
     }
 
     companion object {

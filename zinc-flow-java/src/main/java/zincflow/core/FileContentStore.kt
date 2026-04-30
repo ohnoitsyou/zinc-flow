@@ -18,42 +18,35 @@ import java.util.concurrent.atomic.AtomicLong
  * `claim-<ticks>-<counter>` id scheme so claims sort by creation
  * time. Thread-safe — [AtomicLong] drives the counter, and the
  * filesystem provides the rest of the atomicity. */
-class FileContentStore(baseDir: Path) : ContentStore {
-    private val baseDir: Path
+class FileContentStore(val baseDir: Path) : ContentStore {
     private val counter = AtomicLong()
 
     init {
-        requireNotNull(baseDir) { "FileContentStore: baseDir must not be null" }
-        this.baseDir = baseDir
         Files.createDirectories(baseDir)
-    }
-
-    fun baseDir(): Path {
-        return baseDir
     }
 
     override fun store(data: ByteArray): String {
         val id = generateClaimId()
         val target = claimPath(id)
-        val tmp = target.resolveSibling(target.getFileName().toString() + ".part")
+        val tmp = target.resolveSibling("${target.fileName}.part")
         try {
-            Files.createDirectories(target.getParent())
+            Files.createDirectories(target.parent)
             Files.write(tmp, data)
             Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE)
         } catch (ex: IOException) {
-            throw RuntimeException("FileContentStore: failed to store claim " + id, ex)
+            throw RuntimeException("FileContentStore: failed to store claim $id", ex)
         }
         return id
     }
 
     @Throws(IOException::class)
-    override fun store(`in`: InputStream): String {
+    override fun store(inStream: InputStream): String {
         val id = generateClaimId()
         val target = claimPath(id)
-        val tmp = target.resolveSibling(target.getFileName().toString() + ".part")
-        Files.createDirectories(target.getParent())
+        val tmp = target.resolveSibling("${target.fileName}.part")
+        Files.createDirectories(target.parent)
         Files.newOutputStream(tmp).use { out ->
-            `in`.transferTo(out)
+            inStream.transferTo(out)
         }
         Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE)
         return id
@@ -77,18 +70,17 @@ class FileContentStore(baseDir: Path) : ContentStore {
     override fun size(claimId: String): Long {
         val p = claimPath(claimId)
         if (!Files.exists(p)) return -1
-        try {
-            return Files.size(p)
-        } catch (ex: IOException) {
-            return -1
+        return try {
+            Files.size(p)
+        } catch (_: IOException) {
+            -1
         }
     }
 
     override fun delete(claimId: String) {
         try {
             Files.deleteIfExists(claimPath(claimId))
-        } catch (ignored: IOException) { /* best-effort */
-        }
+        } catch (_: IOException) { }
     }
 
     override fun exists(claimId: String): Boolean {

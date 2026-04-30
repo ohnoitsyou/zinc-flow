@@ -26,9 +26,10 @@ import kotlin.concurrent.Volatile
  * `.processed/`) or [.onRejected].
  * 
  * Mirrors zinc-flow-csharp's PollingSource. */
-abstract class PollingSource protected constructor(name: String, pollIntervalMillis: Long) : Source {
-    private val name: String
-    private val pollIntervalMillis: Long
+abstract class PollingSource protected constructor(private val name: String, pollIntervalMillis: Long) : Source {
+    // Guard against zero/negative — a tight loop would pin a CPU
+    // and surprise any operator who typo'd a config value.
+    private val pollIntervalMillis: Long = pollIntervalMillis.takeIf { it > 0 } ?: 1000
 
     @Volatile
     private var running = false
@@ -37,34 +38,22 @@ abstract class PollingSource protected constructor(name: String, pollIntervalMil
     private var loop: Thread? = null
 
     init {
-        require(!(name == null || name.isEmpty())) { "source name must not be blank" }
-        this.name = name
-        // Guard against zero/negative — a tight loop would pin a CPU
-        // and surprise any operator who typo'd a config value.
-        this.pollIntervalMillis = if (pollIntervalMillis > 0) pollIntervalMillis else 1000
+        require(name.isNotEmpty()) { "source name must not be blank" }
     }
 
-    override fun name(): String {
-        return name
-    }
+    override fun name(): String = name
 
-    override fun isRunning(): Boolean {
-        return running
-    }
-
-    fun pollIntervalMillis(): Long {
-        return pollIntervalMillis
-    }
+    fun pollIntervalMillis(): Long = pollIntervalMillis
 
     /** Scan the external system and return zero or more FlowFiles to
      * hand to the pipeline. Implementations should return promptly on
      * interruption so [.stop] isn't blocked by a long scan. */
-    protected abstract fun poll(): MutableList<FlowFile>?
+    protected abstract fun poll(): MutableList<FlowFile>
 
     /** Called after the pipeline accepted a FlowFile. Default is a no-op;
      * `GetFile` overrides this to move the source file to
      * `.processed/`. */
-    protected open fun onIngested(ff: FlowFile?) { /* default: nothing */
+    protected open fun onIngested(ff: FlowFile) { /* default: nothing */
     }
 
     /** Called when the pipeline refused a FlowFile (ingest returned
@@ -75,13 +64,10 @@ abstract class PollingSource protected constructor(name: String, pollIntervalMil
     }
 
     @Synchronized
-    override fun start(ingest: Predicate<FlowFile?>) {
-        requireNotNull(ingest) { "ingest callback must not be null" }
+    override fun start(ingest: (FlowFile) -> Boolean) {
         if (running) return
         running = true
-        loop = Thread.ofVirtual()
-            .name("zinc-flow-source-" + name)
-            .start(Runnable { runLoop(ingest) })
+        loop = Thread.ofVirtual().name("zinc-flow-source-$name").start { runLoop(ingest) }
         log.info("source {} started ({} type, poll={}ms)", name, sourceType(), pollIntervalMillis)
     }
 
@@ -89,36 +75,32 @@ abstract class PollingSource protected constructor(name: String, pollIntervalMil
     override fun stop() {
         if (!running) return
         running = false
-        val t = loop
-        if (t != null) t.interrupt()
+        loop?.interrupt() ?: return
         loop = null
         log.info("source {} stopped", name)
     }
 
-    private fun runLoop(ingest: Predicate<FlowFile?>) {
-        while (running && !Thread.currentThread().isInterrupted()) {
+    private fun runLoop(ingest: (FlowFile) -> Boolean) {
+        while (running && !Thread.currentThread().isInterrupted) {
             try {
                 val batch = poll()
-                if (batch != null) {
-                    for (ff in batch) {
-                        if (!running) return
-                        var accepted: Boolean
-                        try {
-                            accepted = ingest.test(ff)
-                        } catch (ex: RuntimeException) {
-                            log.warn("source {}: ingest threw for {} — {}", name, ff.stringId(), ex.toString())
-                            accepted = false
-                        }
-                        if (accepted) onIngested(ff)
-                        else onRejected(ff)
+                for (ff in batch) {
+                    if (!running) return
+                    val accepted: Boolean = try {
+                        ingest(ff)
+                    } catch (ex: RuntimeException) {
+                        log.warn("source {}: ingest threw for {} — {}", name, ff.stringId(), ex.toString())
+                        false
                     }
+                    if (accepted) onIngested(ff)
+                    else onRejected(ff)
                 }
             } catch (ex: RuntimeException) {
-                log.warn("source {}: poll failed — {}", name, ex.toString())
+                log.warn("source $name: poll failed — $ex")
             }
             try {
                 TimeUnit.MILLISECONDS.sleep(pollIntervalMillis)
-            } catch (ie: InterruptedException) {
+            } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
                 return
             }

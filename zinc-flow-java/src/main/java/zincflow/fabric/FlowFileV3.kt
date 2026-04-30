@@ -77,25 +77,26 @@ object FlowFileV3 {
     @JvmStatic
     fun unpack(data: ByteArray, offset: Int): UnpackResult {
         if (offset < 0 || offset + MAGIC_LEN > data.size) {
-            return UnpackResult(null, offset, "buffer too small for FlowFile V3 magic at offset " + offset)
+            return UnpackResult(null, offset, "buffer too small for FlowFile V3 magic at offset $offset")
         }
         for (i in 0..<MAGIC_LEN) {
             if (data[offset + i] != MAGIC[i]) {
-                return UnpackResult(null, offset, "invalid FlowFile V3 magic at offset " + offset)
+                return UnpackResult(null, offset, "invalid FlowFile V3 magic at offset $offset")
             }
         }
+        data.slice(0 .. MAGIC_LEN)
         var pos = offset + MAGIC_LEN
 
         val ref = IntArray(1)
         val count = readFieldLength(data, pos, ref)
         pos = ref[0]
 
-        val attrs: MutableMap<String?, String?> = LinkedHashMap<String?, String?>(count)
+        val attrs = mutableMapOf<String, String>()
         for (i in 0..<count) {
             val keyLen = readFieldLength(data, pos, ref)
             pos = ref[0]
             if (pos + keyLen > data.size) {
-                return UnpackResult(null, offset, "truncated key at attribute " + i)
+                return UnpackResult(null, offset, "truncated key at attribute $i")
             }
             val key = String(data, pos, keyLen, StandardCharsets.UTF_8)
             pos += keyLen
@@ -103,7 +104,7 @@ object FlowFileV3 {
             val valLen = readFieldLength(data, pos, ref)
             pos = ref[0]
             if (pos + valLen > data.size) {
-                return UnpackResult(null, offset, "truncated value at attribute '" + key + "'")
+                return UnpackResult(null, offset, "truncated value at attribute '$key'")
             }
             val `val` = String(data, pos, valLen, StandardCharsets.UTF_8)
             pos += valLen
@@ -117,7 +118,7 @@ object FlowFileV3 {
         val contentLen = readInt64BE(data, pos)
         pos += 8
         if (contentLen < 0 || pos + contentLen > data.size) {
-            return UnpackResult(null, offset, "content length " + contentLen + " overruns buffer")
+            return UnpackResult(null, offset, "content length $contentLen overruns buffer")
         }
         val content = ByteArray(contentLen.toInt())
         System.arraycopy(data, pos, content, 0, content.size)
@@ -132,14 +133,14 @@ object FlowFileV3 {
      * surface whatever was well-formed). Returns empty if the magic is
      * missing at offset 0. */
     @JvmStatic
-    fun unpackAll(data: ByteArray): MutableList<FlowFile?> {
-        val out: MutableList<FlowFile?> = ArrayList<FlowFile?>()
+    fun unpackAll(data: ByteArray): MutableList<FlowFile> {
+        val out = mutableListOf<FlowFile>()
         var pos = 0
         while (pos < data.size) {
-            val r = unpack(data, pos)
-            if (!r.ok() || r.flowFile == null) break
-            out.add(r.flowFile)
-            pos = r.nextOffset
+            val result = unpack(data, pos)
+            if (!result.ok() || result.flowFile == null) break
+            out.add(result.flowFile)
+            pos = result.nextOffset
         }
         return out
     }
@@ -162,10 +163,10 @@ object FlowFileV3 {
     private fun readFieldLength(data: ByteArray, offset: Int, nextOut: IntArray): Int {
         val high = data[offset].toInt() and 0xFF
         val low = data[offset + 1].toInt() and 0xFF
-        val `val` = (high shl 8) or low
-        if (`val` < MAX_VALUE_2_BYTES) {
+        val value = (high shl 8) or low
+        if (value < MAX_VALUE_2_BYTES) {
             nextOut[0] = offset + 2
-            return `val`
+            return value
         }
         val ext = (((data[offset + 2].toInt() and 0xFF) shl 24)
                 or ((data[offset + 3].toInt() and 0xFF) shl 16)

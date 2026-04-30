@@ -8,31 +8,34 @@ package zincflow.core
  * The tuple-style return (bytes + error string) mirrors the C#
  * `ContentHelpers.Resolve`; empty error means success. */
 object ContentResolver {
-    @JvmStatic
     fun resolve(content: Content, store: ContentStore?): Resolution {
-        if (content is RawContent) {
-            return Resolution(content.bytes, "")
+        return when(content) {
+            is RawContent -> Resolution(content.bytes)
+            is ClaimContent if store == null -> Resolution(ByteArray(0), "ClaimContent requires a ContentStore but none was provided")
+            is ClaimContent -> Resolution(store!!.retrieve(content.claimId)) // Previous branch covers the store is null case
+            else -> Resolution(ByteArray(0), "unknown content variant: ${content.javaClass.getName()}")
         }
-        if (content is ClaimContent) {
-            if (store == null) {
-                return Resolution(ByteArray(0), "ClaimContent requires a ContentStore but none was provided")
-            }
-            val out = store.retrieve(content.claimId)
-            return Resolution(out, "")
-        }
-        if (content is RecordContent) {
-            return Resolution(
-                ByteArray(0),
-                "cannot resolve RecordContent to raw bytes — serialize with a record writer first"
-            )
-        }
-        return Resolution(ByteArray(0), "unknown content variant: " + content.javaClass.getName())
     }
 
-    @JvmRecord
-    data class Resolution(@JvmField val bytes: ByteArray?, val error: String?) {
-        fun ok(): Boolean {
-            return error == null || error.isEmpty()
+    data class Resolution(val bytes: ByteArray, val error: String? = null) {
+        fun ok(): Boolean = error.isNullOrEmpty()
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as Resolution
+
+            if (!bytes.contentEquals(other.bytes)) return false
+            if (error != other.error) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = bytes.contentHashCode()
+            result = 31 * result + (error?.hashCode() ?: 0)
+            return result
         }
     }
 }

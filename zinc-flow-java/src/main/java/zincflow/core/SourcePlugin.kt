@@ -10,7 +10,7 @@ package zincflow.core
 interface SourcePlugin {
     /** Stable identifier used in `config.yaml`. Must be unique
      * across all registered (type, version) pairs. */
-    fun sourceType(): String?
+    fun sourceType(): String
 
     /** Semver version for this source. Exposed via
      * `GET /api/source-types` so config authors can pin via
@@ -26,12 +26,12 @@ interface SourcePlugin {
 
     /** Config keys the source accepts — surfaced to the UI so it can
      * render an "add source" form. */
-    fun configKeys(): MutableList<String?> {
-        return mutableListOf<String?>()
+    fun configKeys(): MutableList<String> {
+        return mutableListOf()
     }
 
     /** Instantiate the source given its config-file name and config
      * map. `name` is the key under `sources:` in YAML —
      * the source uses it as its own [Source.name]. */
-    fun create(name: String?, config: MutableMap<String?, Any?>?): Source?
+    fun create(name: String, config: MutableMap<String, Any?>): Source?
 }
