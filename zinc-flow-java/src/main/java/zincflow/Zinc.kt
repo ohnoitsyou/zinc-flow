@@ -29,14 +29,13 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
-import java.util.function.Supplier
 import kotlin.system.exitProcess
 
 /** Entry point. Loads a config.yaml if one is present (arg 1 or
  * ./config.yaml), otherwise falls back to a built-in demo pipeline so
  * `zinc run` with no config still produces something useful. */
-object Main {
-    private val log: Logger = LoggerFactory.getLogger(Main::class.java)
+object Zinc {
+    private val log: Logger = LoggerFactory.getLogger(Zinc::class.java)
 
     // --- Config key paths (relative to the effective layered map) -------
     private const val CFG_UI = "ui"
@@ -63,7 +62,8 @@ object Main {
             val mode = args[0]
             when (mode) {
                 "validate", "--validate" -> {
-                    val exit = runValidate(if (args.size > 1) args[1] else null)
+                    require(args.size > 1) { " path to configuration not provided"}
+                    val exit = runValidate(args[1])
                     exitProcess(exit)
                 }
 
@@ -89,15 +89,15 @@ object Main {
 
         // Populate registries via ServiceLoader — same path plugin jars
         // use, so built-ins and plugins are discovered uniformly.
-        PluginLoader.loadSources(Main::class.java.getClassLoader(), sourceRegistry)
-        PluginLoader.loadProviders(Main::class.java.getClassLoader(), providerRegistry)
+        PluginLoader.loadSources(Zinc::class.java.classLoader, sourceRegistry)
+        PluginLoader.loadProviders(Zinc::class.java.classLoader, providerRegistry)
 
         // Register the two bootstrap-dependent providers (identity
         // supplier, resolved repo path) as registry factories that
         // close over Main-local state. An AtomicReference lets the
         // UIReg factory run before identity is resolved — the supplier
         // is called lazily at heartbeat time, not construct time.
-        val identityRef = AtomicReference<NodeIdentity?>()
+        val identityRef = AtomicReference<NodeIdentity>()
         registerBootstrapProviders(providerRegistry, identityRef, configPath)
 
         // Plugin discovery — scan $ZINCFLOW_PLUGINS_DIR (default ./plugins)
@@ -139,13 +139,15 @@ object Main {
         // Resolve node identity from the effective layered config (or
         // the persisted UUID file), then populate the atomic so the
         // UIReg factory's lazy identity supplier can see it.
-        val effective = if (loader.lastOverlay() == null)
-            Map.of<String?, Any?>()
-        else
-            loader.lastOverlay().effective
+        val effective: MutableMap<String, Any> = if (loader.lastOverlay() == null) {
+            mutableMapOf()
+        } else {
+            loader.lastOverlay()?.effective ?: mutableMapOf()
+        }
         val identity = NodeIdentity.resolve(
             effective,
-            Path.of(NodeIdentity.NODE_ID_FILE), Main::class.java.getPackage().getImplementationVersion()
+            Path.of(NodeIdentity.NODE_ID_FILE),
+            Zinc::class.java.getPackage().implementationVersion
         )
         identityRef.set(identity)
 
@@ -155,10 +157,11 @@ object Main {
         // which preserves the default set (logging, config, provenance,
         // content, schema_registry) plus conditional ones (UIReg when
         // ui.register_to is set, VC when vc.enabled is true).
-        val providersToWire = if (loader.lastProviders().isEmpty())
+        val providersToWire = if (loader.lastProviders().isEmpty()) {
             defaultProviders(providerRegistry, effective)
-        else
+        } else {
             loader.lastProviders()
+        }
         for (p in providersToWire) {
             context.addProvider(p)
             p.enable()
@@ -177,12 +180,8 @@ object Main {
 
         val port = resolvePort()
         val server = HttpServer(pipeline, loader, configPath, plugins, pluginsDir, identity).start(port)
-        log.info(
-            "zinc-flow-java up — node {} at http://localhost:{} (hostname {})",
-            identity.nodeId(), server.port(), identity.hostname()
-        )
-        log.info("dashboard: GET http://localhost:{}/dashboard    metrics: /metrics", server.port())
-
+        log.info("zinc-flow-java up — node ${identity.nodeId} at http://localhost:${server.port()} (hostname ${identity.hostname})")
+        log.info("dashboard: GET http://localhost:${server.port()}/dashboard metrics: /metrics")
         registerShutdownHook(server, pipeline, context)
     }
 
@@ -190,7 +189,7 @@ object Main {
      * SIGTERM. Runs on a dedicated platform thread — `shutdown()`
      * implementations must be fast and non-blocking (they already are). */
     private fun registerShutdownHook(server: HttpServer, pipeline: Pipeline, context: ProcessorContext) {
-        Runtime.getRuntime().addShutdownHook(Thread.ofPlatform().name("zinc-flow-shutdown").unstarted(Runnable {
+        Runtime.getRuntime().addShutdownHook(Thread.ofPlatform().name("zinc-flow-shutdown").unstarted {
             log.info("shutdown signal received — stopping worker")
             for (source in pipeline.sources().values) {
                 try {
@@ -210,7 +209,7 @@ object Main {
                 log.warn("provider shutdown failed: {}", ex.toString())
             }
             log.info("worker stopped cleanly")
-        }))
+        })
     }
 
     private fun resolvePort(): Int {
@@ -223,47 +222,42 @@ object Main {
      * `providers:` block can reference them. */
     private fun registerBootstrapProviders(
         providerRegistry: ProviderRegistry,
-        identityRef: AtomicReference<NodeIdentity?>,
+        identityRef: AtomicReference<NodeIdentity>,
         configPath: Path?
     ) {
         providerRegistry.register(
             ProviderRegistry.TypeInfo(
-                UIRegistrationProvider.TYPE, TypeRefs.DEFAULT_VERSION,
+                UIRegistrationProvider.TYPE,
+                TypeRefs.DEFAULT_VERSION,
                 "Self-registers this worker with a central UI via periodic heartbeat.",
-                List.of<String?>(CFG_UI_REGISTER)
-            ),
-            ProviderRegistry.Factory { cfg: MutableMap<String?, Any?>? ->
-                val target = cfg!!.get(CFG_UI_REGISTER)
+                mutableListOf(CFG_UI_REGISTER)
+            )) { cfg: MutableMap<String, Any> ->
+                val target = cfg[CFG_UI_REGISTER]
                 if (target == null || target.toString().isEmpty()) return@register null
-                UIRegistrationProvider(
-                    target.toString(),
-                    Supplier { identityRef.get()!!.toMap(resolvePort()) })
-            })
+                UIRegistrationProvider(target.toString(), { identityRef.get().toMap(resolvePort()) })
+            }
 
         providerRegistry.register(
             ProviderRegistry.TypeInfo(
                 VersionControlProvider.TYPE, TypeRefs.DEFAULT_VERSION,
                 "Shells out to system git for flow-config commit + push.",
-                List.of<String?>(CFG_VC_ENABLED, CFG_VC_REPO, CFG_VC_GIT, CFG_VC_REMOTE, CFG_VC_BRANCH)
-            ),
-            ProviderRegistry.Factory { cfg: MutableMap<String?, Any?>? ->
-                val enabled = cfg!!.get(CFG_VC_ENABLED)
-                val on = if (enabled is Boolean)
-                    enabled
-                else
-                    "true".equals(enabled.toString(), ignoreCase = true)
+                mutableListOf(CFG_VC_ENABLED, CFG_VC_REPO, CFG_VC_GIT, CFG_VC_REMOTE, CFG_VC_BRANCH)
+            )) { cfg: MutableMap<String, Any> ->
+                val enabled = cfg[CFG_VC_ENABLED]
+                val on = enabled as? Boolean ?: enabled.toString().toBoolean()
                 if (!on) return@register null
-                val repo = if (cfg.containsKey(CFG_VC_REPO))
-                    Path.of(cfg.get(CFG_VC_REPO).toString())
-                else
-                    (if (configPath == null) Path.of(".") else configPath.toAbsolutePath().getParent())
+                val repo = if (cfg.containsKey(CFG_VC_REPO)) {
+                    Path.of(cfg[CFG_VC_REPO].toString())
+                } else {
+                    if (configPath == null) Path.of(".") else configPath.toAbsolutePath().parent
+                }
                 VersionControlProvider(
                     repo,
                     cfg.getOrDefault(CFG_VC_GIT, "git").toString(),
                     cfg.getOrDefault(CFG_VC_REMOTE, "origin").toString(),
                     cfg.getOrDefault(CFG_VC_BRANCH, "main").toString()
                 )
-            })
+            }
     }
 
     /** Build the default provider set when `providers:` is absent
@@ -273,22 +267,23 @@ object Main {
      * an empty map for the stateless built-ins. Null factory returns
      * mean "disabled" and are filtered out. */
     private fun defaultProviders(
-        providerRegistry: ProviderRegistry, effective: MutableMap<String?, Any?>
+        providerRegistry: ProviderRegistry,
+        effective: MutableMap<String, Any>
     ): MutableList<Provider> {
-        val out: MutableList<Provider> = ArrayList<Provider>()
+        val out: MutableList<Provider> = mutableListOf()
         for (info in providerRegistry.listAll()) {
             val cfg = when (info.name) {
-                UIRegistrationProvider.TYPE -> if (effective.get(CFG_UI) is MutableMap<*, *>)
-                    m as MutableMap<String?, Any?>
+                UIRegistrationProvider.TYPE -> if (effective[CFG_UI] is MutableMap<*, *>)
+                    m as MutableMap<String, Any>
                 else
-                    Map.of<String?, Any?>()
+                    mutableMapOf()
 
-                VersionControlProvider.TYPE -> if (effective.get(CFG_VC) is MutableMap<*, *>)
-                    m as MutableMap<String?, Any?>
+                VersionControlProvider.TYPE -> if (effective[CFG_VC] is MutableMap<*, *>)
+                    m as MutableMap<String, Any>
                 else
-                    Map.of<String?, Any?>()
+                    mutableMapOf()
 
-                else -> Map.of<String?, Any?>()
+                else -> mutableMapOf()
             }
             val p = providerRegistry.create(info.qualifiedName(), cfg)
             if (p != null) out.add(p)
@@ -297,7 +292,7 @@ object Main {
     }
 
     private fun resolveConfigPath(args: Array<String>): Path? {
-        if (args.size > 0) return Path.of(args[0])
+        if (args.isNotEmpty()) return Path.of(args[0])
         val defaultPath = Path.of("config.yaml")
         return if (Files.isRegularFile(defaultPath)) defaultPath else null
     }
@@ -323,20 +318,20 @@ object Main {
         val elevate: Processor = UpdateAttribute("priority", "elevated")
         val tail: Processor = LogAttribute("[tail] ")
 
-        val processors = Map.of<String?, Processor?>(
-            "ingress", ingress,
-            "router", router,
-            "elevate", elevate,
-            "tail", tail
+        val processors = mutableMapOf(
+            "ingress" to ingress,
+            "router" to router,
+            "elevate" to elevate,
+            "tail" to tail
         )
-        val connections = Map.of<String?, MutableMap<String?, MutableList<String?>?>?>(
-            "ingress", Map.of<String?, MutableList<String?>?>(Relationships.SUCCESS, mutableListOf<String?>("router")),
-            "router", Map.of<String?, MutableList<String?>?>(
-                "high", mutableListOf<String?>("elevate"),
-                "low", mutableListOf<String?>("tail"),
-                Relationships.UNMATCHED, mutableListOf<String?>("tail")
+        val connections = mutableMapOf(
+            "ingress"  to mutableMapOf(Relationships.SUCCESS to mutableListOf("router")),
+            "router" to mutableMapOf(
+                "high" to mutableListOf("elevate"),
+                "low" to mutableListOf("tail"),
+                Relationships.UNMATCHED to mutableListOf("tail")
             ),
-            "elevate", Map.of<String?, MutableList<String?>?>(Relationships.SUCCESS, mutableListOf<String?>("tail"))
+            "elevate" to mutableMapOf(Relationships.SUCCESS to mutableListOf("tail"))
         )
         return PipelineGraphKt(processors, connections, mutableListOf<String?>("ingress"))
     }
@@ -345,8 +340,8 @@ object Main {
      * zinc-flow-csharp: 0 = clean, 1 = errors, 2 = file not found.
      * Warnings are reported but don't affect the exit code. */
     @JvmStatic
-    fun runValidate(pathArg: String?): Int {
-        val path = if (pathArg != null) Path.of(pathArg) else Path.of("config.yaml")
+    fun runValidate(pathArg: String): Int {
+        val path = Path.of(pathArg)
         if (!Files.isRegularFile(path)) {
             System.err.println("validate: config file not found: " + path.toAbsolutePath())
             return 2
@@ -355,8 +350,8 @@ object Main {
         val registry = Registry()
         val sources = SourceRegistry()
         val providers = ProviderRegistry()
-        PluginLoader.loadSources(Main::class.java.getClassLoader(), sources)
-        PluginLoader.loadProviders(Main::class.java.getClassLoader(), providers)
+        PluginLoader.loadSources(Zinc::class.java.classLoader, sources)
+        PluginLoader.loadProviders(Zinc::class.java.classLoader, providers)
         val loader = ConfigLoader(registry, ProcessorContext(), sources, providers)
 
         val graph: PipelineGraphKt?
@@ -370,19 +365,16 @@ object Main {
         val result =
             FlowValidator.validate(graph.processors.keys, graph.connections)
 
-        println("validate: " + path)
-        if (result.errors.isEmpty() && result.warnings.isEmpty()) {
+        println("validate: $path")
+        if (result.errors?.isEmpty() == true && result.warnings?.isEmpty() == true) {
             println("  no issues — config is valid")
             return 0
         }
-        for (err in result.errors) println("  [error]   " + err)
-        for (warn in result.warnings) println("  [warning] " + warn)
+        result.errors?.forEach { println("  [error]   $it") }
+        result.warnings?.forEach { println("  [warning]   $it") }
         println()
-        System.out.printf(
-            "summary: %d error(s), %d warning(s)%n",
-            result.errors.size, result.warnings.size
-        )
-        return if (result.errors.isEmpty()) 0 else 1
+        println("summary: ${result.errors?.size} error(s), ${result.warnings?.size} warning(s)")
+        return if (result.errors?.isEmpty() == true ) 0 else 1
     }
 
     /** Throughput benchmark — two-hop UpdateAttribute pipeline, no HTTP,
@@ -392,14 +384,11 @@ object Main {
     @JvmStatic
     fun runBench() {
         println("=== zinc-flow-java benchmark ===")
-        println(
-            ("Runtime: " + System.getProperty("java.vm.name") + " "
-                    + System.getProperty("java.runtime.version"))
-        )
+        println("Runtime: ${System.getProperty("java.vm.name")}  ${System.getProperty("java.runtime.version")}")
         println()
 
         println("Warmup (JIT)...")
-        benchThroughput(10000,  /*quiet=*/true)
+        benchThroughput(10000, quiet = true)
 
         System.gc() // best-effort pre-measurement settle
         println()
@@ -413,9 +402,9 @@ object Main {
     private fun benchThroughput(n: Int, quiet: Boolean) {
         val tag: Processor = UpdateAttribute("env", "prod")
         val sink: Processor = UpdateAttribute("done", "true")
-        val procs = Map.of<String?, Processor?>("tag", tag, "sink", sink)
-        val conns = Map.of<String?, MutableMap<String?, MutableList<String?>?>?>(
-            "tag", Map.of<String?, MutableList<String?>?>(Relationships.SUCCESS, mutableListOf<String?>("sink"))
+        val procs = mutableMapOf("tag" to tag, "sink" to sink)
+        val conns = mutableMapOf(
+            "tag" to mutableMapOf(Relationships.SUCCESS to mutableListOf("sink"))
         )
         val graph = PipelineGraphKt(procs, conns, mutableListOf<String?>("tag"))
         val pipeline = Pipeline(graph)
@@ -426,7 +415,7 @@ object Main {
             pipeline.ingest(
                 FlowFile.create(
                     payload,
-                    Map.of<String?, String?>("type", "order", "id", i.toString())
+                    mutableMapOf("type" to "order", "id" to i.toString())
                 )
             )
         }

@@ -1,7 +1,6 @@
 package zincflow.core
 
 import org.apache.avro.Schema
-import java.util.List
 
 /** Structured records payload — a list of flat `Map<String,Object>`
  * entries carrying an optional Avro [Schema]. The schema travels
@@ -14,23 +13,20 @@ import java.util.List
  * (QueryRecord, TransformRecord, ExtractRecordField) ignore it. Format
  * writers fall back to inferring a schema from the first record when
  * the field is absent. */
-class RecordContent @JvmOverloads constructor(
-    records: MutableList<MutableMap<String?, Any?>?>?,
-    @JvmField val schema: Schema? = null
+@ConsistentCopyVisibility
+data class RecordContent private constructor(
+    val records: List<Map<String, Any?>>,
+    val schema: Schema? = null
 ) : Content {
-    override fun size(): Int {
-        return records!!.size
+    companion object {
+        operator fun invoke(records: List<Map<String, Any?>>, schema: Schema? = null): RecordContent {
+            return RecordContent(records.toList(), schema)
+        }
+        operator fun invoke(records: MutableList<MutableMap<String, Any?>>, schema: Schema? = null): RecordContent {
+            return RecordContent(records.toList(), schema)
+        }
     }
-
-    val records: MutableList<MutableMap<String?, Any?>?>?
-
-    /** Backwards-compatible constructor for call sites that don't yet
-     * carry a schema (JSON reads, in-memory transforms, test setup). */
-    init {
-        var records = records
-        requireNotNull(records) { "RecordContent records must not be null — use List.of() for empty" }
-        records = List.copyOf<MutableMap<String?, Any?>?>(records)
-        this.records = records
-        // schema may be null — see class javadoc.
+    override fun size(): Int {
+        return records.size
     }
 }

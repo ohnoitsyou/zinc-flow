@@ -1,10 +1,17 @@
 package zincflow.fabric
 
+import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.databind.DeserializationContext
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import io.javalin.Javalin
 import io.javalin.config.JavalinConfig
 import io.javalin.http.Context
-import io.javalin.http.Handler
 import org.eclipse.jetty.util.thread.QueuedThreadPool
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -19,10 +26,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
 import java.util.Locale
-import java.util.Map
 import java.util.TreeMap
 import java.util.concurrent.Executors
-import java.util.function.Consumer
 import kotlin.collections.mutableMapOf
 import kotlin.concurrent.Volatile
 import kotlin.math.max
@@ -48,18 +53,18 @@ import kotlin.math.max
  * Javalin 6 with Jetty 12 underneath — non-DI, minimal surface. */
 class HttpServer @JvmOverloads constructor(
     private val pipeline: Pipeline, private val loader: ConfigLoader? = null, private val configPath: Path? = null,
-    plugins: PluginLoader.Summary? = null, private val pluginsDir: Path? = null,
-    private val identity: NodeIdentity? = null
+    private val plugins: PluginLoader.Summary? = null, private val pluginsDir: Path? = null,
+    private val identity: NodeIdentity? = null,
+    private val json: ObjectMapper = ObjectMapper()
 ) {
-    private val plugins: PluginLoader.Summary
-    private val json = ObjectMapper()
+//    private val plugins: PluginLoader.Summary
     private var app: Javalin? = null
 
     @Volatile
     private var boundPort = -1
 
     fun start(port: Int): HttpServer {
-        app = Javalin.create(Consumer { cfg: JavalinConfig? ->
+        app = Javalin.create { cfg: JavalinConfig ->
             // Virtual-thread handoff for HTTP requests. Jetty's
             // QueuedThreadPool keeps a small platform-thread pool
             // for accept/select; actual handler work runs on
@@ -68,67 +73,63 @@ class HttpServer @JvmOverloads constructor(
             // thread. Lets a single worker pod fan out to
             // thousands of concurrent ingests. K8s still scales
             // pods horizontally; virtual threads scale within.
-            val qtp = QueuedThreadPool()
-            qtp.setName("zinc-flow-jetty")
-            qtp.setVirtualThreadsExecutor(Executors.newVirtualThreadPerTaskExecutor())
-            cfg!!.jetty.threadPool = qtp
-        }) // GET / serves the dashboard when the static file is on the
+            cfg.jetty.threadPool = QueuedThreadPool().apply {
+                name = "http-server-qtp"
+                virtualThreadsExecutor = Executors.newVirtualThreadPerTaskExecutor()
+            }
+        }
+            // GET / serves the dashboard when the static file is on the
             // classpath. POST / is ingest — a Java-track choice for
             // enterprise HTTP ingress on the worker itself. Distinguishing
             // by method is a zincflow-ism; C# uses a separate
             // ListenHTTP source instead.
-            .get("/", Handler { ctx: Context? -> this.handleDashboard(ctx!!) })
-            .post("/", Handler { ctx: Context? -> this.handleIngest(ctx!!) })
-            .get("/dashboard", Handler { ctx: Context? -> this.handleDashboard(ctx!!) })
-            .get("/health", Handler { ctx: Context? -> this.handleHealth(ctx!!) })
-            .get("/metrics", Handler { ctx: Context? -> this.handleMetrics(ctx!!) })
-            .get("/api/stats", Handler { ctx: Context? -> this.handleStats(ctx!!) })
-            .get("/api/processors", Handler { ctx: Context? -> this.handleProcessors(ctx!!) })
-            .get("/api/processor-stats", Handler { ctx: Context? -> this.handleProcessorStats(ctx!!) })
-            .get("/api/connections", Handler { ctx: Context? -> this.handleConnections(ctx!!) })
-            .get("/api/flow", Handler { ctx: Context? -> this.handleFlow(ctx!!) })
-            .get("/api/registry", Handler { ctx: Context? -> this.handleRegistry(ctx!!) })
-            .post("/api/reload", Handler { ctx: Context? -> this.handleReload(ctx!!) })
-            .get("/api/providers", Handler { ctx: Context? -> this.handleProviders(ctx!!) })
-            .post("/api/providers/enable", Handler { ctx: Context? -> this.handleEnableProvider(ctx!!) })
-            .post(
-                "/api/providers/disable",
-                Handler { ctx: Context? -> this.handleDisableProvider(ctx!!) }) // Order matters — specific paths register before the
+            .get("/") { handleDashboard(it) }
+            .post("/") { handleIngest(it) }
+            .get("/dashboard") { handleDashboard(it) }
+            .get("/health", { handleHealth(it) })
+            .get("/metrics", { handleMetrics(it) })
+            .get("/api/stats") { handleStats(it) }
+            .get("/api/processors") { handleProcessors(it) }
+            .get("/api/processor-stats") { handleProcessorStats(it) }
+            .get("/api/connections") { handleConnections(it) }
+            .get("/api/flow") { handleFlow(it) }
+            .get("/api/registry") { handleRegistry(it) }
+            .post("/api/reload") { handleReload(it) }
+            .get("/api/providers") { handleProviders(it) }
+            .post("/api/providers/enable") { handleEnableProvider(it) }
+            .post("/api/providers/disable" ) { handleDisableProvider(it) }
+            // Order matters — specific paths register before the
             // {id} wildcard or Javalin binds /api/provenance/failures
             // to handleProvenanceById with id="failures" and 400s.
-            .get("/api/provenance", Handler { ctx: Context? -> this.handleProvenanceRecent(ctx!!) })
-            .get("/api/provenance/failures", Handler { ctx: Context? -> this.handleProvenanceFailures(ctx!!) })
-            .get("/api/provenance/{id}", Handler { ctx: Context? -> this.handleProvenanceById(ctx!!) })
-            .post("/api/processors/add", Handler { ctx: Context? -> this.handleAddProcessor(ctx!!) })
-            .delete("/api/processors/remove", Handler { ctx: Context? -> this.handleRemoveProcessor(ctx!!) })
-            .post("/api/processors/enable", Handler { ctx: Context? -> this.handleEnableProcessor(ctx!!) })
-            .post("/api/processors/disable", Handler { ctx: Context? -> this.handleDisableProcessor(ctx!!) })
-            .post("/api/processors/state", Handler { ctx: Context? -> this.handleProcessorState(ctx!!) })
-            .get("/api/sources", Handler { ctx: Context? -> this.handleSources(ctx!!) })
-            .post("/api/sources/start", Handler { ctx: Context? -> this.handleStartSource(ctx!!) })
-            .post("/api/sources/stop", Handler { ctx: Context? -> this.handleStopSource(ctx!!) })
-            .get("/api/plugins", Handler { ctx: Context? -> this.handlePlugins(ctx!!) })
-            .post("/api/plugins/reload", Handler { ctx: Context? -> this.handleReloadPlugins(ctx!!) })
-            .post("/api/connections", Handler { ctx: Context? -> this.handleAddConnection(ctx!!) })
-            .delete("/api/connections", Handler { ctx: Context? -> this.handleRemoveConnection(ctx!!) })
-            .put("/api/connections/{from}", Handler { ctx: Context? -> this.handleSetConnections(ctx!!) })
-            .put("/api/entrypoints", Handler { ctx: Context? -> this.handleSetEntryPoints(ctx!!) })
-            .get("/api/overlays", Handler { ctx: Context? -> this.handleOverlays(ctx!!) })
-            .get("/api/processor-types", Handler { ctx: Context? -> this.handleProcessorTypes(ctx!!) })
-            .get("/api/processor-types/{name}", Handler { ctx: Context? -> this.handleProcessorType(ctx!!) })
-            .post("/api/flow/save", Handler { ctx: Context? -> this.handleFlowSave(ctx!!) })
-            .get("/api/identity", Handler { ctx: Context? -> this.handleIdentity(ctx!!) })
-            .put("/api/processors/{name}/config", Handler { ctx: Context? -> this.handleUpdateProcessorConfig(ctx!!) })
-            .put(
-                "/api/processors/{name}/connections",
-                Handler { ctx: Context? -> this.handleSetProcessorConnections(ctx!!) })
-            .post(
-                "/api/processors/{name}/stats/reset",
-                Handler { ctx: Context? -> this.handleResetProcessorStats(ctx!!) })
-            .post("/api/flowfiles/ingest", Handler { ctx: Context? -> this.handleIngestFlowFile(ctx!!) })
-            .get("/api/vc/status", Handler { ctx: Context? -> this.handleVcStatus(ctx!!) })
-            .post("/api/vc/commit", Handler { ctx: Context? -> this.handleVcCommit(ctx!!) })
-            .post("/api/vc/push", Handler { ctx: Context? -> this.handleVcPush(ctx!!) })
+            .get("/api/provenance") { handleProvenanceRecent(it) }
+            .get("/api/provenance/failures") { handleProvenanceFailures(it) }
+            .get("/api/provenance/{id}") { handleProvenanceById(it) }
+            .post("/api/processors/add") { handleAddProcessor(it) }
+            .delete("/api/processors/remove") { handleRemoveProcessor(it) }
+            .post("/api/processors/enable") { handleEnableProcessor(it) }
+            .post("/api/processors/disable") { handleDisableProcessor(it) }
+            .post("/api/processors/state") { handleProcessorState(it) }
+            .get("/api/sources") { handleSources(it) }
+            .post("/api/sources/start") { handleStartSource(it) }
+            .post("/api/sources/stop") { handleStopSource(it) }
+            .get("/api/plugins") { handlePlugins(it) }
+            .post("/api/plugins/reload") { handleReloadPlugins(it) }
+            .post("/api/connections") { handleAddConnection(it) }
+            .delete("/api/connections") { handleRemoveConnection(it) }
+            .put("/api/connections/{from}") { handleSetConnections(it) }
+            .put("/api/entrypoints") { handleSetEntryPoints(it) }
+            .get("/api/overlays") { handleOverlays(it) }
+            .get("/api/processor-types") { handleProcessorTypes(it) }
+            .get("/api/processor-types/{name}") { handleProcessorType(it) }
+            .post("/api/flow/save") { handleFlowSave(it) }
+            .get("/api/identity") { handleIdentity(it) }
+            .put("/api/processors/{name}/config") { handleUpdateProcessorConfig(it) }
+            .put("/api/processors/{name}/connections") { handleSetProcessorConnections(it) }
+            .post("/api/processors/{name}/stats/reset") { handleResetProcessorStats(it) }
+            .post("/api/flowfiles/ingest") { handleIngestFlowFile(it) }
+            .get("/api/vc/status") { handleVcStatus(it) }
+            .post("/api/vc/commit") { handleVcCommit(it) }
+            .post("/api/vc/push") { handleVcPush(it) }
 
         // Confluent-shape schema registry — mounted only when a
         // SchemaRegistryProvider is wired into the context. Skipping the
@@ -136,9 +137,9 @@ class HttpServer @JvmOverloads constructor(
         // probes /api/schema-registry/subjects gets a clean 404 instead
         // of an endpoint that always returns an error.
         val schemaRegistry = pipeline.context()
-            .getProviderAs<SchemaRegistryProvider?>(SchemaRegistryProvider.NAME, SchemaRegistryProvider::class.java)
-        if (schemaRegistry != null) {
-            SchemaRegistryHandler(schemaRegistry).mapRoutes(app)
+            .getProviderAs(SchemaRegistryProvider.NAME, SchemaRegistryProvider::class.java)
+        if (schemaRegistry != null && app != null) {
+            SchemaRegistryHandler(schemaRegistry).mapRoutes(app!!)
         }
 
         app!!.start(port)
@@ -153,29 +154,26 @@ class HttpServer @JvmOverloads constructor(
     }
 
     fun stop() {
-        if (app != null) {
-            app!!.stop()
-            app = null
-            boundPort = -1
-        }
+        app?.stop()
+        app = null
+        boundPort = -1
+
         // Release plugin classloaders (both the reload-replaced current
         // one and the startup-supplied one). Safe if either is null.
-        if (currentPlugins != null) {
-            currentPlugins!!.close()
-            currentPlugins = null
-        }
-        plugins.close()
+        currentPlugins?.close()
+        currentPlugins = null
+
+        plugins?.close()
     }
 
     // --- Handlers ---
     private fun handleIngest(ctx: Context) {
         val body = ctx.bodyAsBytes()
-        val attributes: MutableMap<String?, String?> = HashMap<String?, String?>()
-        ctx.headerMap().forEach { (k: String?, v: String?) ->
-            if (k == null) return@forEach
+        val attributes = mutableMapOf<String, String>()
+        ctx.headerMap().forEach { (k: String, v: String) ->
             val lower = k.lowercase(Locale.getDefault())
             if (lower.startsWith("x-flow-")) {
-                attributes.put(lower.substring("x-flow-".length), v)
+                attributes[lower.substring("x-flow-".length)] = v
             }
         }
         val ff = FlowFile.create(body, attributes)
@@ -183,9 +181,38 @@ class HttpServer @JvmOverloads constructor(
             pipeline.ingest(ff)
             ctx.status(202).result(ff.stringId())
         } catch (ex: RuntimeException) {
-            log.error("ingest failed for {}: {}", ff.stringId(), ex.toString(), ex)
-            ctx.status(500).result("pipeline error: " + ex.message)
+            log.error("ingest failed for ${ff.stringId()}: $ex", ex)
+            ctx.status(500).result("pipeline error: ${ex.message}")
         }
+    }
+
+
+    @JsonDeserialize(using = UIFlowFileDeserializer::class)
+    sealed class FlowFileIngest(val target: String, val content: String, val attributes: Map<String, String>) {
+        class ContentFlowFile(target: String, content: String, attributes: Map<String, String>) : FlowFileIngest(target, content, attributes)
+        class Base64FlowFile(target: String, contentBase64: String, attributes: Map<String, String>): FlowFileIngest(target,
+            Base64.getDecoder().decode(contentBase64).contentToString(), attributes) {
+        }
+    }
+
+    class UIFlowFileDeserializer : StdDeserializer<FlowFileIngest>(FlowFileIngest::class.java) {
+        companion object {
+            private val mapper = jacksonObjectMapper()
+        }
+        override fun deserialize(
+            parser: JsonParser,
+            ctx: DeserializationContext,
+        ): FlowFileIngest {
+            val root = mapper.readTree<ObjectNode>(parser)
+            return if (root != null && root.has("contentBase64")) {
+                mapper.treeToValue(root, FlowFileIngest.Base64FlowFile::class.java)
+            } else if(root != null && root.has("content")) {
+                mapper.treeToValue(root, FlowFileIngest.ContentFlowFile::class.java)
+            } else {
+                throw IllegalArgumentException("Could not determine type")
+            }
+        }
+
     }
 
     /** UI-facing flowfile injection. Accepts JSON
@@ -194,64 +221,35 @@ class HttpServer @JvmOverloads constructor(
      * so the shared React UI's test-flowfile dialog works on both tracks. */
     @Throws(Exception::class)
     private fun handleIngestFlowFile(ctx: Context) {
-        val body: MutableMap<String?, Any?>?
-        try {
-            body = json.readValue<MutableMap<*, *>?>(ctx.bodyAsBytes(), MutableMap::class.java)
+        val body = try {
+            json.readValue<FlowFileIngest>(ctx.bodyAsBytes())
         } catch (ex: Exception) {
             writeError(ctx, 400, "body must be a JSON object: " + ex.message)
             return
         }
-        if (body == null) {
-            writeError(ctx, 400, "body must be a JSON object")
-            return
-        }
 
-        val data: ByteArray?
-        val b64 = body.get("contentBase64")
-        if (b64 is String && !b64.isEmpty()) {
-            try {
-                data = Base64.getDecoder().decode(b64)
-            } catch (ex: IllegalArgumentException) {
-                writeError(ctx, 400, "contentBase64 invalid: " + ex.message)
-                return
-            }
-        } else if (body.get("content") is String) {
-            data = s.toByteArray(StandardCharsets.UTF_8)
-        } else {
-            data = ByteArray(0)
-        }
-
-        val attrs: MutableMap<String?, String?> = HashMap<String?, String?>()
-        val a = body.get("attributes")
-        if (a is MutableMap<*, *>) {
-            for (e in a.entries) {
-                if (e.key != null) attrs.put(e.key.toString(), if (e.value == null) "" else e.value.toString())
-            }
-        }
-
-        val target = if (body.get("target") is String) t else ""
-        val ff = FlowFile.create(data, attrs)
+        val ff = FlowFile.create(body.content.toByteArray(), body.attributes.toMutableMap())
 
         try {
-            if (target.isEmpty() || "*" == target) {
+            if (body.target.isEmpty() || "*" == body.target) {
                 pipeline.ingest(ff)
                 ctx.contentType("application/json").result(
                     json.writeValueAsBytes(
-                        Map.of<String?, String?>(
-                            "status", "ingested",
-                            "flowfile", ff.stringId(),
-                            "target", "entry-points"
+                        mapOf(
+                            "status" to "ingested",
+                            "flowfile" to ff.stringId(),
+                            "target" to "entry-points"
                         )
                     )
                 )
             } else {
-                pipeline.ingestAt(ff, target)
+                pipeline.ingestAt(ff, body.target)
                 ctx.contentType("application/json").result(
                     json.writeValueAsBytes(
-                        Map.of<String?, String?>(
-                            "status", "ingested",
-                            "flowfile", ff.stringId(),
-                            "target", target
+                        mapOf(
+                            "status" to "ingested",
+                            "flowfile" to ff.stringId(),
+                            "target" to body.target
                         )
                     )
                 )
@@ -264,7 +262,7 @@ class HttpServer @JvmOverloads constructor(
     @Throws(Exception::class)
     private fun handleResetProcessorStats(ctx: Context) {
         val name = ctx.pathParam("name")
-        if (name == null || name.isEmpty()) {
+        if (name.isEmpty()) {
             writeError(ctx, 400, "name required")
             return
         }
@@ -275,9 +273,9 @@ class HttpServer @JvmOverloads constructor(
         pipeline.stats().resetProcessor(name)
         ctx.contentType("application/json").result(
             json.writeValueAsBytes(
-                Map.of<String?, String?>(
-                    "status", "reset",
-                    "name", name
+                mapOf(
+                    "status" to "reset",
+                    "name" to name
                 )
             )
         )
@@ -297,22 +295,19 @@ class HttpServer @JvmOverloads constructor(
      * Detailed counters (per-processor totals, drops, failures) stay
      * on `/api/processor-stats` and the internal
      * [Stats.snapshot] method for programmatic consumers. */
-    private fun summaryStats(): MutableMap<String?, Any?> {
-        val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        out.put("processed", pipeline.stats().snapshot().get("totalProcessed") as Long?)
-        out.put("activeExecutions", pipeline.metrics().activeExecutions())
-        out.put("processors", pipeline.graph().processors.size)
-        out.put("sources", pipeline.sources().size)
-        return out
+    private fun summaryStats(): Map<String, Any?> {
+        return buildMap {
+            put("processed", pipeline.stats().snapshot().get("totalProcessed") as Long?)
+            put("activeExecutions", pipeline.metrics().activeExecutions())
+            put("processors", pipeline.graph().processors.size)
+            put("sources", pipeline.sources().size)
+        }
     }
 
     @Throws(Exception::class)
     private fun handleProcessors(ctx: Context) {
-        val graph = pipeline.graph()
-        val out: MutableMap<String?, String?> = LinkedHashMap<String?, String?>()
-        for (entry in graph.processors.entries) {
-            out.put(entry.key, pipeline.processorType(entry.key))
-        }
+        val out = pipeline.graph().processors.entries
+            .associate { (key, _) -> key to pipeline.processorType(key) }
         ctx.contentType("application/json").result(json.writeValueAsBytes(out))
     }
 
@@ -329,59 +324,61 @@ class HttpServer @JvmOverloads constructor(
     @Throws(Exception::class)
     private fun handleFlow(ctx: Context) {
         val graph = pipeline.graph()
-        val processors: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+        val processors = mutableListOf<Map<String, Any>>()
         val perProcStats = pipeline.processorStats()
         for (entry in graph.processors.entries) {
             val name = entry.key
-            val info: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-            info.put("name", name)
-            info.put(ConfigLoader.Companion.TYPE_KEY, pipeline.processorType(name))
-            info.put("state", pipeline.processorState(name).name)
-            info.put("config", pipeline.processorConfig(name))
-            info.put("stats", perProcStats.getOrDefault(name, Map.of<String?, Long?>()))
-            info.put("connections", graph.connections.getOrDefault(name, Map.of<String?, MutableList<String?>?>()))
+            val info = buildMap<String, Any> {
+                put("name", name)
+                put(ConfigLoader.TYPE_KEY, pipeline.processorType(name))
+                put("state", pipeline.processorState(name).name)
+                put("config", pipeline.processorConfig(name))
+                put("stats", perProcStats.getOrDefault(name, emptyMap()))
+                put("connections", graph.connections.getOrDefault(name, emptyMap()))
+            }
             processors.add(info)
         }
 
-        val providers: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+        val providers = mutableListOf<Map<String, Any>>()
         val pctx = pipeline.context()
         for (pname in pctx.listProviders()) {
             val p = pctx.getProvider(pname)
             providers.add(
-                Map.of<String?, Any?>(
-                    "name", pname,
-                    "type", if (p == null) "unknown" else p.providerType(),
-                    "state", if (p == null) "UNKNOWN" else p.state().name
+                mapOf(
+                    "name" to pname,
+                    "type" to (p?.providerType() ?: "unknown"),
+                    "state" to (p?.state()?.name ?: "UNKNOWN")
                 )
             )
         }
 
-        val srcs: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+        val srcs = mutableListOf<Map<String, Any?>>()
         for (s in pipeline.sources().values) {
             srcs.add(
-                Map.of<String?, Any?>(
-                    "name", s.name(),
-                    "type", s.sourceType(),
-                    "running", s.isRunning
+                mapOf(
+                    "name" to s.name(),
+                    "type" to s.sourceType(),
+                    "running" to s.isRunning
                 )
             )
         }
 
-        val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        out.put("entryPoints", graph.entryPoints)
-        out.put("processors", processors)
-        // Top-level `connections` is a Java-track add-on (the current UI's
-        // FlowController + BfsLayout read from here). C# doesn't expose
-        // it; the same data is inline on each processor. Tracked as a
-        // C#-cohort candidate for consistency.
-        out.put("connections", graph.connections)
-        out.put("providers", providers)
-        out.put("sources", srcs)
-        // Embedded stats match /api/stats summary shape (processed,
-        // activeExecutions, processors, sources) — not the detailed
-        // Stats.snapshot(). Dashboards only need the summary; callers
-        // that want totals/errors/drops go to /api/processor-stats.
-        out.put("stats", summaryStats())
+        val out = buildMap {
+            put("entryPoints", graph.entryPoints)
+            put("processors", processors)
+            // Top-level `connections` is a Java-track add-on (the current UI's
+            // FlowController + BfsLayout read from here). C# doesn't expose
+            // it; the same data is inline on each processor. Tracked as a
+            // C#-cohort candidate for consistency.
+            put("connections", graph.connections)
+            put("providers", providers)
+            put("sources", srcs)
+            // Embedded stats match /api/stats summary shape (processed,
+            // activeExecutions, processors, sources) — not the detailed
+            // Stats.snapshot(). Dashboards only need the summary; callers
+            // that want totals/errors/drops go to /api/processor-stats.
+            put("stats", summaryStats())
+        }
         ctx.contentType("application/json").result(json.writeValueAsBytes(out))
     }
 
@@ -930,46 +927,43 @@ class HttpServer @JvmOverloads constructor(
         }
         log.info("flow saved to {}", configPath)
 
-        val body: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        body.put("status", "saved")
-        body.put("path", configPath.toString())
-        body.put("bytes", yaml.length)
-        body.put("committed", false)
-        body.put("pushed", false)
+        val body= buildMap {
+            put("status", "saved")
+            put("path", configPath.toString())
+            put("bytes", yaml?.length)
+            put("committed", false)
+            put("pushed", false)
+        }.toMutableMap()
 
         // VC-aware save: if VersionControlProvider is enabled, also
         // stage+commit the config file and optionally push to the
         // configured remote. One UI button → one backend call → right
         // thing happens. Matches zinc-flow-csharp's POST /api/flow/save
         // behavior so the UI sees the same response shape on both tracks.
-        val vc =
-            pipeline.context().getProviderAs<VersionControlProvider?>(
-                "version_control",
-                VersionControlProvider::class.java
-            )
-        if (vc != null && vc.isEnabled()) {
+        val vc = pipeline.context().getProviderAs("version_control", VersionControlProvider::class.java)
+        if (vc?.isEnabled == true) {
             val reqBody = readJsonBody(ctx)
             var message = "flow: update via UI"
             var push = true
             if (reqBody != null) {
-                val m = reqBody.get("message")
+                val m = reqBody["message"]
                 if (m is String && !m.isBlank()) message = m
-                val p = reqBody.get("push")
+                val p = reqBody["push"]
                 if (p is Boolean) push = p
             }
             val relPath = configPath.getFileName().toString()
             val commitRes = vc.commit(relPath, message)
-            body.put("committed", commitRes.ok)
-            body.put("commitExitCode", commitRes.exitCode)
-            body.put("commitStdout", commitRes.stdout())
-            if (!commitRes.ok) body.put("commitStderr", commitRes.stderr())
+            body["committed"] = commitRes.ok
+            body["commitExitCode"] = commitRes.exitCode
+            body["commitStdout"] = commitRes.stdout
+            if (!commitRes.ok) body["commitStderr"] = commitRes.stderr
 
             if (commitRes.ok && push) {
                 val pushRes = vc.push()
-                body.put("pushed", pushRes.ok)
-                body.put("pushExitCode", pushRes.exitCode)
-                body.put("pushStdout", pushRes.stdout())
-                if (!pushRes.ok) body.put("pushStderr", pushRes.stderr())
+                body["pushed"] = pushRes.ok
+                body["pushExitCode"] = pushRes.exitCode
+                body["pushStdout"] = pushRes.stdout
+                if (!pushRes.ok) body["pushStderr"] = pushRes.stderr
             }
         }
 

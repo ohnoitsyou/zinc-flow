@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /// Covers the validate + bench subcommands introduced for CLI parity
 /// with zinc-flow-csharp. Exit codes and stdout shape are asserted
 /// directly — these are part of the user-facing contract.
-final class MainSubcommandsTest {
+final class ZincSubcommandsTest {
 
     @Test
     void validateReturnsZeroOnCleanConfig(@TempDir Path dir) throws Exception {
@@ -29,7 +29,7 @@ final class MainSubcommandsTest {
                 """);
 
         try (Captured out = Captured.stdoutStderr()) {
-            int code = Main.runValidate(cfg.toString());
+            int code = Zinc.runValidate(cfg.toString());
             assertEquals(0, code, "clean config should exit 0; got stdout:\n" + out.stdout());
             assertTrue(out.stdout().contains("no issues"),
                     "expected 'no issues' in stdout, got:\n" + out.stdout());
@@ -39,7 +39,7 @@ final class MainSubcommandsTest {
     @Test
     void validateReturnsTwoWhenFileMissing() {
         try (Captured out = Captured.stdoutStderr()) {
-            int code = Main.runValidate("/does/not/exist.yaml");
+            int code = Zinc.runValidate("/does/not/exist.yaml");
             assertEquals(2, code);
             assertTrue(out.stderr().contains("config file not found"),
                     "expected 'config file not found' in stderr, got:\n" + out.stderr());
@@ -64,7 +64,7 @@ final class MainSubcommandsTest {
                 """);
 
         try (Captured out = Captured.stdoutStderr()) {
-            int code = Main.runValidate(cfg.toString());
+            int code = Zinc.runValidate(cfg.toString());
             assertEquals(1, code, "expected non-zero for invalid config; stdout:\n"
                     + out.stdout() + "\nstderr:\n" + out.stderr());
         }
@@ -78,7 +78,7 @@ final class MainSubcommandsTest {
         // assert that the command exits normally and prints the expected
         // section headers.
         try (Captured out = Captured.stdoutStderr()) {
-            Main.runBench();
+            Zinc.runBench();
             String o = out.stdout();
             assertTrue(o.contains("zinc-flow-java benchmark"), "expected banner in:\n" + o);
             assertTrue(o.contains("Pipeline throughput"), "expected results section in:\n" + o);

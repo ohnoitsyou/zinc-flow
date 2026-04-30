@@ -30,7 +30,7 @@ typealias RelationshipMap = MutableMap<String, MutableList<String>>
  * 
  * Matches the zinc-flow-csharp model — see
  * `zinc-flow-csharp/ZincFlow/Fabric/Fabric.cs`. */
-class PipelineKt @JvmOverloads constructor(
+class PipelineKt(
     @Volatile private var graph: PipelineGraphKt,
     private val maxHops: Int = DEFAULT_MAX_HOPS,
     metrics: Metrics? = null,
@@ -170,7 +170,7 @@ class PipelineKt @JvmOverloads constructor(
 
         val newProcessors: MutableMap<String, Processor> = g.processors.toMutableMap()
         newProcessors[name] = rebuilt
-        graph = PipelineGraphKtt.of(newProcessors, g.connections, g.entryPoints)
+        graph = PipelineGraphKt.of(newProcessors, g.connections, g.entryPoints)
 
         val prior = processorDefs[name]
         val requires = prior?.requires ?: mutableListOf()

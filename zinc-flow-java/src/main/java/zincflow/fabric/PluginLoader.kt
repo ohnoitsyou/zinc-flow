@@ -36,7 +36,7 @@ import java.util.function.Predicate
  * build a [URLClassLoader] over every `*.jar` in
  * the directory, then scan it. Used in production via the
  * `$ZINCFLOW_PLUGINS_DIR` (default `./plugins`) hook
- * in [zincflow.Main].
+ * in [zincflow.Zinc].
  * 
  * 
  * Both return a [Summary] listing the registered names so the

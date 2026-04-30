@@ -19,14 +19,9 @@ import java.util.List
  * enum, decimal, and other logical types can land in follow-up work. */
 internal object AvroConversion {
     // --- Record ↔ Map -----------------------------------------------------
-    fun toMap(record: GenericRecord?): MutableMap<String?, Any?>? {
-        if (record == null) return null
-        val schema = record.getSchema()
-        val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        for (f in schema.getFields()) {
-            out.put(f.name(), unwrap(record.get(f.name()), f.schema()))
-        }
-        return out
+    fun toMap(record: GenericRecord): Map<String, Any?> {
+        val schema = record.schema
+        return schema.fields.associate { field -> field.name() to unwrap(record.get(field.name()), field.schema()) }
     }
 
     fun toGenericRecord(map: MutableMap<String?, Any?>?, schema: Schema): GenericRecord? {

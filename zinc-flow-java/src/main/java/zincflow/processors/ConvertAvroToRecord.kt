@@ -26,14 +26,8 @@ import java.io.IOException
  * `avro.schema` FlowFile attribute (same compact format). When
  * neither produces a schema, ingestion fails with a clear message —
  * Avro binary is self-describing only when paired with a schema. */
-class ConvertAvroToRecord(schemaName: String?, fieldDefs: String?) : Processor {
-    private val schemaName: String
-    private val configSchema: Schema?
-
-    init {
-        this.schemaName = if (schemaName == null) "" else schemaName
-        this.configSchema = SchemaDefs.parse(this.schemaName, fieldDefs)
-    }
+class ConvertAvroToRecord(private val schemaName: String, fieldDefs: String) : Processor {
+    private val configSchema: Schema? = SchemaDefs.parse(this.schemaName, fieldDefs)
 
     override fun process(ff: FlowFile): ProcessorResult {
         if (ff.content !is RawContent) {
@@ -45,7 +39,7 @@ class ConvertAvroToRecord(schemaName: String?, fieldDefs: String?) : Processor {
         var schema = configSchema
         if (schema == null) {
             val attrFields = ff.attributes.get("avro.schema")
-            if (attrFields != null && !attrFields.isBlank()) {
+            if (!attrFields.isNullOrBlank()) {
                 schema = SchemaDefs.parse(schemaName, attrFields)
             }
         }
@@ -58,9 +52,9 @@ class ConvertAvroToRecord(schemaName: String?, fieldDefs: String?) : Processor {
         try {
             val reader = GenericDatumReader<GenericRecord?>(schema)
             val decoder = DecoderFactory.get().binaryDecoder(ByteArrayInputStream(raw.bytes), null)
-            val records: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+            val records = mutableListOf<Map<String, Any?>>()
             while (!decoder.isEnd()) {
-                val r = reader.read(null, decoder)
+                val r = reader.read(null, decoder) ?: continue
                 records.add(AvroConversion.toMap(r))
             }
             if (records.isEmpty()) {
@@ -70,7 +64,7 @@ class ConvertAvroToRecord(schemaName: String?, fieldDefs: String?) : Processor {
                 ff.withContent(RecordContent(records, schema))
                     .withAttribute("record.count", records.size.toString())
             )
-        } catch (eof: EOFException) {
+        } catch (_: EOFException) {
             return ProcessorResult.failure("ConvertAvroToRecord: unexpected EOF mid-record", ff)
         } catch (ex: IOException) {
             return ProcessorResult.failure("ConvertAvroToRecord: decode failed — " + ex.message, ff)

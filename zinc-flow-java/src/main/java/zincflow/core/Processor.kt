@@ -11,5 +11,5 @@ interface Processor {
         return javaClass.getSimpleName()
     }
 
-    fun process(ff: FlowFile?): ProcessorResult?
+    fun process(ff: FlowFile): ProcessorResult
 }

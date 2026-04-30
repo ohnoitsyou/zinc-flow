@@ -37,7 +37,7 @@ public final class Pipeline {
     /// forever. Matches the C# default.
     public static final int DEFAULT_MAX_HOPS = 50;
 
-    private volatile PipelineGraph graph;
+    private volatile PipelineGraphKt graph;
     private final Stats stats;
     private final int maxHops;
     private final ProcessorContext context;
@@ -456,7 +456,7 @@ public final class Pipeline {
         return stats;
     }
 
-    public PipelineGraph graph() {
+    public PipelineGraphKt graph() {
         return graph;
     }
 

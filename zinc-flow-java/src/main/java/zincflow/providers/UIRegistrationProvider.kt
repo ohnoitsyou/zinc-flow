@@ -31,18 +31,13 @@ import kotlin.concurrent.Volatile
  * The provider's lifecycle controls the heartbeat: `enable()`
  * starts the scheduled task (fire-once-immediately + every 30 s
  * afterward), `disable()` / `shutdown()` cancel it. */
-class UIRegistrationProvider @JvmOverloads constructor(
-    targetUrl: String,
-    identitySupplier: Supplier<MutableMap<String?, Any?>?>,
-    heartbeatSeconds: Long = DEFAULT_HEARTBEAT_SECONDS,
-    http: HttpClient = HttpClient.newHttpClient()
+class UIRegistrationProvider(
+    private val targetUrl: String,
+    private val identitySupplier: () -> MutableMap<String, Any>,
+    private val heartbeatSeconds: Long = DEFAULT_HEARTBEAT_SECONDS,
+    private val http: HttpClient = HttpClient.newHttpClient(),
+    private val json: ObjectMapper = ObjectMapper(),
 ) : Provider {
-    private val targetUrl: String
-    private val identitySupplier: Supplier<MutableMap<String?, Any?>?>
-    private val heartbeatSeconds: Long
-    private val json = ObjectMapper()
-    private val http: HttpClient
-
     private var scheduler: ScheduledExecutorService? = null
     private var heartbeat: ScheduledFuture<*>? = null
 
@@ -53,33 +48,23 @@ class UIRegistrationProvider @JvmOverloads constructor(
     private var lastHeartbeatMillis: Long = 0
 
     @Volatile
-    private var lastStatus = -1
+    private var lastStatus: Int = -1
 
     @Volatile
-    private var lastError: String? = ""
+    private var lastError: String = ""
 
     init {
-        require(!(targetUrl == null || targetUrl.isEmpty())) { "targetUrl must not be blank" }
-        requireNotNull(identitySupplier) { "identitySupplier must not be null" }
+        require(targetUrl.isNotEmpty()) { "targetUrl must not be blank" }
         require(heartbeatSeconds > 0) { "heartbeatSeconds must be > 0" }
-        this.targetUrl = targetUrl
-        this.identitySupplier = identitySupplier
-        this.heartbeatSeconds = heartbeatSeconds
-        this.http = http
     }
 
-    override fun name(): String {
-        return NAME
-    }
+    override fun name(): String = NAME
 
-    override fun providerType(): String {
-        return TYPE
-    }
+    override fun providerType(): String = TYPE
 
-    override fun state(): ComponentState {
-        return state
-    }
+    override fun state(): ComponentState = state
 
+    // TODO: Convert to use coroutines
     @Synchronized
     override fun enable() {
         if (state == ComponentState.ENABLED) return
@@ -91,12 +76,12 @@ class UIRegistrationProvider @JvmOverloads constructor(
         scheduler = Executors.newSingleThreadScheduledExecutor(
             Thread.ofPlatform().daemon().name("zinc-flow-ui-registration").factory()
         )
-        heartbeat = scheduler!!.scheduleAtFixedRate(
-            Runnable { Thread.startVirtualThread(Runnable { this.postOnce() }) },
+        heartbeat = scheduler?.scheduleAtFixedRate(
+            { Thread.startVirtualThread { this.postOnce() } },
             0, heartbeatSeconds, TimeUnit.SECONDS
         )
         state = ComponentState.ENABLED
-        log.info("ui registration enabled — target {}, heartbeat {}s", targetUrl, heartbeatSeconds)
+        log.info("ui registration enabled — target $targetUrl, heartbeat ${heartbeatSeconds}s")
     }
 
     @Synchronized
@@ -110,32 +95,25 @@ class UIRegistrationProvider @JvmOverloads constructor(
     }
 
     private fun stopScheduler() {
-        if (heartbeat != null) {
-            heartbeat!!.cancel(false)
-            heartbeat = null
-        }
-        if (scheduler != null) {
-            scheduler!!.shutdown()
-            scheduler = null
-        }
+        heartbeat?.cancel(false).also { heartbeat = null }
+        scheduler?.shutdown().also { scheduler = null }
     }
 
     /** Exposed for tests + admin endpoints — most recent POST result. */
-    fun lastOutcome(): MutableMap<String?, Any?> {
-        val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        out.put("target", targetUrl)
-        out.put("lastHeartbeatMillis", lastHeartbeatMillis)
-        out.put("lastStatus", lastStatus)
-        out.put("lastError", lastError)
-        return out
+    fun lastOutcome(): Map<String, Any?> {
+        return buildMap {
+            put("target", targetUrl)
+            put("lastHeartbeatMillis", lastHeartbeatMillis)
+            put("lastStatus", lastStatus)
+            put("lastError", lastError)
+        }
     }
 
     private fun postOnce() {
-        val identity: MutableMap<String?, Any?>?
-        try {
-            identity = identitySupplier.get()
+        val identity = try {
+            identitySupplier()
         } catch (ex: RuntimeException) {
-            lastError = "identity supplier threw: " + ex
+            lastError = "identity supplier threw: $ex"
             log.warn("ui registration: identity supplier threw {}", ex.toString())
             return
         }
@@ -145,21 +123,21 @@ class UIRegistrationProvider @JvmOverloads constructor(
                 .header("content-type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(identity)))
                 .build()
-            val resp = http.send<String?>(req, HttpResponse.BodyHandlers.ofString())
+            val resp = http.send(req, HttpResponse.BodyHandlers.ofString())
             lastHeartbeatMillis = System.currentTimeMillis()
             lastStatus = resp.statusCode()
             lastError = ""
             if (resp.statusCode() >= 400) {
-                log.warn("ui registration: {} returned {}", targetUrl, resp.statusCode())
+                log.warn("ui registration: $targetUrl returned ${resp.statusCode()}")
             } else {
-                log.debug("ui registration: heartbeat ok ({})", resp.statusCode())
+                log.debug("ui registration: heartbeat ok (${resp.statusCode()})", )
             }
         } catch (ex: Exception) {
             lastHeartbeatMillis = System.currentTimeMillis()
             lastStatus = -1
             lastError = ex.toString()
             if (ex is InterruptedException) Thread.currentThread().interrupt()
-            log.warn("ui registration: heartbeat to {} failed: {}", targetUrl, ex.toString())
+            log.warn("ui registration: heartbeat to $targetUrl failed: $ex")
         }
     }
 

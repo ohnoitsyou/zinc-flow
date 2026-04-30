@@ -167,26 +167,10 @@ object ConfigOverlay {
 
     /** Result of a [.load] call: every layer, the merged map,
      * and per-dot-path provenance. */
-    class Resolved(
+    data class Resolved(
         val basePath: Path?,
-        layers: MutableList<Layer?>?,
-        effective: MutableMap<String?, Any?>?,
-        provenance: MutableMap<String?, String?>?
-    ) {
-        val layers: MutableList<Layer?>?
-        val effective: MutableMap<String?, Any?>?
-        val provenance: MutableMap<String?, String?>?
-
-        init {
-            var layers = layers
-            var effective = effective
-            var provenance = provenance
-            layers = List.copyOf<Layer?>(layers)
-            effective = ConfigOverlay.deepCopy(effective!!)
-            provenance = Map.copyOf<String?, String?>(provenance)
-            this.layers = layers
-            this.effective = effective
-            this.provenance = provenance
-        }
-    }
+        val layers: MutableList<Layer> = mutableListOf(),
+        val effective: MutableMap<String, Any> = mutableMapOf(),
+        val provenance: MutableMap<String, String> = mutableMapOf(),
+    ) { }
 }

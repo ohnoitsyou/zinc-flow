@@ -17,26 +17,25 @@ import java.util.Locale
  * double/float64, bytes, string. Unknown types throw — matches C#. */
 object SchemaDefs {
     @JvmStatic
-    fun parse(recordName: String?, fieldDefs: String?): Schema? {
-        if (fieldDefs == null || fieldDefs.isBlank()) return null
+    fun parse(recordName: String, fieldDefs: String): Schema? {
+        if (fieldDefs.isBlank()) return null
 
-        val name = if (recordName == null || recordName.isBlank()) "Record" else recordName
+        val name = recordName.ifBlank { "Record" }
         var assembler = SchemaBuilder.record(name).namespace("zincflow").fields()
 
-        for (part in fieldDefs.split(",".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()) {
-            val trimmed = part.trim { it <= ' ' }
+        for (part in fieldDefs.split(",").dropLastWhile { it.isEmpty() }) {
+            val trimmed = part.trim()
             if (trimmed.isEmpty()) continue
-            val colon = trimmed.indexOf(':')
-            require(!(colon <= 0 || colon == trimmed.length - 1)) { "ConvertAvroToRecord: malformed field def '" + trimmed + "' — expected 'name:type'" }
-            val fname = trimmed.substring(0, colon).trim { it <= ' ' }
-            val ftype = trimmed.substring(colon + 1).trim { it <= ' ' }.lowercase(Locale.getDefault())
+            require(trimmed.contains(':')) { "ConvertAvroToRecord: malformed field def '$trimmed' — expected 'name:type'" }
+            val fname = trimmed.substringBefore(':').trim()
+            val ftype = trimmed.substringAfter(':').trim().lowercase(Locale.getDefault())
 
             assembler = appendField(assembler, fname, ftype)
         }
         return assembler.endRecord()
     }
 
-    private fun appendField(a: FieldAssembler<Schema?>, fname: String, ftype: String): FieldAssembler<Schema?> {
+    private fun appendField(a: FieldAssembler<Schema>, fname: String, ftype: String): FieldAssembler<Schema> {
         return when (ftype) {
             "boolean", "bool" -> a.name(fname).type().booleanType().noDefault()
             "int", "int32" -> a.name(fname).type().intType().noDefault()

@@ -8,10 +8,13 @@ package zincflow.core
  * 
  * `size` is recorded at claim time so stats and backpressure
  * heuristics don't need to round-trip to the store. */
-@JvmRecord
-data class ClaimContent(@JvmField val claimId: String?, @JvmField val size: Int) : Content {
+data class ClaimContent(val claimId: String, val size: Int) : Content {
+    override fun size(): Int {
+        return size
+    }
+
     init {
-        require(!(claimId == null || claimId.isEmpty())) { "ClaimContent claimId must not be blank" }
+        require(claimId.isNotEmpty()) { "ClaimContent claimId must not be blank" }
         require(size >= 0) { "ClaimContent size must not be negative" }
     }
 }
