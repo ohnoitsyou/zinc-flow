@@ -16,7 +16,6 @@ import java.nio.file.Path
  * 
  * Expected shape (mirrors zinc-flow-csharp):
  * 
- * <pre>
  * flow:
  * entryPoints: [ingress]
  * processors:
@@ -34,7 +33,38 @@ import java.nio.file.Path
  * router:
  * high: [sink]
  * unmatched: [sink]
-</pre> */
+ *
+ * p
+ *
+ *
+ */
+/*
+
+flow_defn:
+  - entryPoints: <entryPoints_defn>
+  - processors: <processors_defn>
+  - connections: <connections_defn>
+
+processors_defn: <Map<processor_defn>>
+processor_defn: <Map<String, Map<String, String>>>
+ - key: String
+ - value: Map<String, String>
+
+flow: 
+  entryPoints:
+    - a
+  processors:
+    a:
+      type: UpdateAttribute
+      config:
+        key: stage
+        value: first
+    b:
+      type: LogAttribute
+  connections:
+    a:
+      success: [b]
+ */
 class ConfigLoader(
     private val registry: Registry,
     context: ProcessorContext? = ProcessorContext(),
@@ -202,23 +232,26 @@ class ConfigLoader(
      * Missing block → empty list, and the caller keeps whatever
      * provider set it bootstrapped. Factories returning null are
      * treated as "disabled for this config" — logged, not thrown. */
-    private fun buildProviders(providersRaw: Any?): MutableList<Provider?> {
-        if (providersRaw == null) return mutableListOf<Provider?>()
+    private fun buildProviders(providersRaw: Any?): MutableList<Provider> {
+        if (providersRaw == null) return mutableListOf()
         require(providersRaw is MutableMap<*, *>) { "config: 'providers' must be a map of name → {type, config}" }
         if (providerRegistry == null) {
             log.warn("providers block present but no ProviderRegistry wired — providers ignored")
-            return mutableListOf<Provider?>()
+            return mutableListOf()
         }
-        val out: MutableList<Provider?> = ArrayList<Provider?>()
+        val out = mutableListOf<Provider>()
         for (entry in providersRaw.entries) {
-            val name: kotlin.String? = entry.key.toString()
-            require(entry.value is MutableMap<*, *>) { "config: provider '" + name + "' must be a map with 'type' + 'config'" }
-            val typeRaw: Any = def.get(TYPE_KEY)!!
-            requireNotNull(typeRaw) { "config: provider '" + name + "' missing 'type'" }
-            val providerConfig = if (def.get(CONFIG_KEY) is MutableMap<*, *>)
-                stringKeyed(c)
-            else
-                Map.of<kotlin.String?, Any?>()
+            val name: String = entry.key.toString()
+            val entryValue = entry.value
+            require(entryValue is MutableMap<*, *>) { "config: provider '$name' must be a map with 'type' + 'config'" }
+            val typeRaw = entryValue[TYPE_KEY]
+            requireNotNull(typeRaw) { "config: provider '$name' missing 'type'" }
+            val entryConfig = entryValue[CONFIG_KEY]
+            val providerConfig = if (entryConfig is MutableMap<*, *>) {
+                stringKeyed(entryConfig)
+            } else {
+                mutableMapOf()
+            }
             val provider = providerRegistry.create(typeRaw.toString(), providerConfig)
             if (provider == null) {
                 log.info("provider '{}' ({}): factory returned null — disabled", name, typeRaw)
@@ -226,7 +259,7 @@ class ConfigLoader(
             }
             out.add(provider)
         }
-        return List.copyOf<Provider?>(out)
+        return out.toMutableList()
     }
 
     /** Build every source declared under `sources:`. Each entry
@@ -250,29 +283,40 @@ class ConfigLoader(
      * 
      * A null source returned by a factory (e.g. GetFile without
      * inputDir) is treated as "disabled" — logged, not thrown. */
-    private fun buildSources(sourcesRaw: Any?): MutableList<Source?> {
-        if (sourcesRaw == null) return mutableListOf()
-        require(sourcesRaw is MutableMap<*, *>) { "config: 'sources' must be a map of name → {type, config}" }
+    private fun buildSources(sourcesRaw: Any?): MutableList<Source> {
         if (sourceRegistry == null) {
             log.warn("sources block present but no SourceRegistry wired — sources ignored")
             return mutableListOf()
         }
+
+        if (sourcesRaw == null) return mutableListOf()
+        require(sourcesRaw is Map<*, *>) { "config: 'sources' must be a map of name → {type, config}" }
+
         val out: MutableList<Source> = mutableListOf()
         for (entry in sourcesRaw.entries) {
             val name: String = entry.key.toString()
-            val sourceRoot = entry.value as? Map<*, *> ?: throw IllegalStateException("config: source '$name' must be a map with 'type' + 'config'" )
+            val sourceRoot = entry.value
+            require(sourceRoot is Map<*, *>) { "config: sources: section for '$name' did not parse as Map" }
 
-            val typeRaw: Any = sourceRoot[TYPE_KEY]!!
-            val sourceConfig: MutableMap<String, Any> = if (sourceRoot[CONFIG_KEY] is MutableMap<*, *>) {
-                stringKeyed(sourceRoot[CONFIG_KEY] as MutableMap<*, *>)
+            val typeRaw = sourceRoot[TYPE_KEY]
+            if(typeRaw !is String) {
+                log.warn("Source defined '$name' but no type found - skipping")
+                continue
+            }
+
+            val configRaw = sourceRoot[CONFIG_KEY]
+            val sourceConfig = if (configRaw is MutableMap<*, *>) {
+                stringKeyed(configRaw)
             } else {
                 mutableMapOf()
             }
-            val source = sourceRegistry.create(typeRaw.toString(), name, sourceConfig)
+
+            val source = sourceRegistry.create(typeRaw, name, sourceConfig)
             if (source == null) {
-                log.info("source '{}' ({}): factory returned null — disabled", name, typeRaw)
+                log.info("source '$name' ($typeRaw): factory returned null — disabled", name, typeRaw)
                 continue
             }
+
             out.add(source)
         }
         return out.toMutableList()

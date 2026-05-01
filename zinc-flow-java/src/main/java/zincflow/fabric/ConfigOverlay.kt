@@ -30,7 +30,7 @@ import java.util.Map
  * path is kept so existing `secrets.yaml` files continue to
  * merge, but no new secrets.yaml files are produced by the worker. */
 object ConfigOverlay {
-    private val log: Logger? = LoggerFactory.getLogger(ConfigOverlay::class.java)
+    private val log: Logger = LoggerFactory.getLogger(ConfigOverlay::class.java)
 
     const val DEFAULT_LOCAL_NAME: String = "config.local.yaml"
     const val DEFAULT_SECRETS_NAME: String = "secrets.yaml"
@@ -40,7 +40,6 @@ object ConfigOverlay {
     /** Explicit paths — used by tests and the admin API's
      * `PUT /api/overlays/secrets` write-through path. */
     /** Default behaviour — env vars first, sibling files as fallback. */
-    @JvmStatic
     @JvmOverloads
     @Throws(IOException::class)
     fun load(

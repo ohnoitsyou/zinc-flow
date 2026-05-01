@@ -57,9 +57,9 @@ class SourceRegistry {
         return (if (latest == null) null else TypeRefs.qualify(type, latest))!!
     }
 
-    fun create(type: String, name: String, config: MutableMap<String, Any>): Source {
+    fun create(type: String, name: String, config: MutableMap<String, Any>): Source? {
         val key = resolveKey(type)
-        return versioned[key]!!.create(name, config)
+        return versioned[key]?.create(name, config)
     }
 
     fun listAll(): MutableList<TypeInfo> {
