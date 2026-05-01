@@ -65,7 +65,7 @@ class Registry {
      * care can pass `new ProcessorContext()` and ignore it inside
      * the factory. */
     fun interface Factory {
-        fun create(config: MutableMap<String, String>, ctx: ProcessorContext?): Processor?
+        fun create(config: Map<String, String>, ctx: ProcessorContext?): Processor?
     }
 
     /** Metadata about a registered processor type. The UI renders the
@@ -136,10 +136,9 @@ class Registry {
      * [ProcessorContext] handy (e.g. ad-hoc tests) get an empty
      * one. Factories that actually consume the context will surface
      * their own error. */
-    @JvmOverloads
     fun create(
         type: String,
-        config: MutableMap<String, String>,
+        config: Map<String, String>,
         ctx: ProcessorContext? = ProcessorContext()
     ): Processor? {
         val key = resolveKey(type) ?: return null

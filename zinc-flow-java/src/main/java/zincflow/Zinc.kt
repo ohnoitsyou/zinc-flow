@@ -14,6 +14,7 @@ import zincflow.fabric.Metrics
 import zincflow.fabric.NodeIdentity
 import zincflow.fabric.Pipeline
 import zincflow.fabric.PipelineGraphKt
+import zincflow.fabric.PipelineGraphKtt
 import zincflow.fabric.PluginLoader
 import zincflow.fabric.ProviderRegistry
 import zincflow.fabric.Registry
@@ -274,12 +275,12 @@ object Zinc {
         for (info in providerRegistry.listAll()) {
             val cfg = when (info.name) {
                 UIRegistrationProvider.TYPE -> if (effective[CFG_UI] is MutableMap<*, *>)
-                    m as MutableMap<String, Any>
+                    effective[CFG_UI] as MutableMap<String, Any>
                 else
                     mutableMapOf()
 
                 VersionControlProvider.TYPE -> if (effective[CFG_VC] is MutableMap<*, *>)
-                    m as MutableMap<String, Any>
+                    effective[CFG_VC] as MutableMap<String, Any>
                 else
                     mutableMapOf()
 

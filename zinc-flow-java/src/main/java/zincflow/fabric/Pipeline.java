@@ -56,19 +56,19 @@ public final class Pipeline {
     private final ConcurrentHashMap<String, ProcessorDef> processorDefs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Source> sources = new ConcurrentHashMap<>();
 
-    public Pipeline(PipelineGraph graph) {
+    public Pipeline(PipelineGraphKt graph) {
         this(graph, DEFAULT_MAX_HOPS, null, null, null);
     }
 
-    public Pipeline(PipelineGraph graph, int maxHops) {
+    public Pipeline(PipelineGraphKt graph, int maxHops) {
         this(graph, maxHops, null, null, null);
     }
 
-    public Pipeline(PipelineGraph graph, int maxHops, Metrics metrics) {
+    public Pipeline(PipelineGraphKt graph, int maxHops, Metrics metrics) {
         this(graph, maxHops, metrics, null, null);
     }
 
-    public Pipeline(PipelineGraph graph, int maxHops, Metrics metrics,
+    public Pipeline(PipelineGraphKt graph, int maxHops, Metrics metrics,
                     ProcessorContext context, Registry registry) {
         this.graph = Objects.requireNonNull(graph);
         this.maxHops = maxHops;

@@ -22,7 +22,7 @@ object FlowValidator {
      * maps `fromProcessor → relationship → [target,...]`. */
     fun validate(
         processorNames: MutableCollection<String>,
-        connections: MutableMap<String, MutableMap<String, MutableList<String>>>
+        connections: MutableMap<String, MutableMap<String, List<String>>>
     ): Result {
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()

@@ -30,7 +30,7 @@ final class ProcessorTypesHttpTest {
                 "Toy", "1.0.0", "A sample processor",
                 java.util.List.of("key", "value"),
                 java.util.List.of("success", "failure")),
-                (cfg, ctx) -> ff -> ProcessorResult.dropped());
+                (cfg, ctx) -> ff -> ProcessorResult.Dropped );
         registry.register(new Registry.TypeInfo(
                 "Toy", "2.0.0", "Revised sample processor",
                 java.util.List.of("key", "value", "mode"),

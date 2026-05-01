@@ -11,18 +11,6 @@ import zincflow.fabric.ConfigOverlay.Resolved
 import zincflow.fabric.ConfigOverlay.load
 import java.io.IOException
 import java.nio.file.Path
-import kotlin.Any
-import kotlin.Throws
-import kotlin.collections.ArrayList
-import kotlin.collections.LinkedHashMap
-import kotlin.collections.MutableList
-import kotlin.collections.MutableMap
-import kotlin.collections.get
-import kotlin.collections.mutableListOf
-import kotlin.require
-import kotlin.requireNotNull
-import kotlin.text.get
-import kotlin.toString
 
 /** Builds a [PipelineGraphKt] from a YAML config file.
  * 
@@ -47,16 +35,16 @@ import kotlin.toString
  * high: [sink]
  * unmatched: [sink]
 </pre> */
-class ConfigLoader @JvmOverloads constructor(
+class ConfigLoader(
     private val registry: Registry,
     context: ProcessorContext? = ProcessorContext(),
     private val sourceRegistry: SourceRegistry? = null,
-    private val providerRegistry: ProviderRegistry? = null
+    private val providerRegistry: ProviderRegistry? = null,
 ) {
     /** Recorded shape of a processor definition (type + config) from the
      * last successful load. Keyed by processor name; consulted on the
      * next load to decide which instances can be reused. */
-    class ProcessorSpec(val type: String, val config: MutableMap<String, String>) { }
+    class ProcessorSpec(val type: String, val config: Map<String, String>) { }
 
     private val context: ProcessorContext = context ?: ProcessorContext()
     private var lastSpecs: MutableMap<String, ProcessorSpec> = mutableMapOf()
@@ -72,7 +60,7 @@ class ConfigLoader @JvmOverloads constructor(
     /** Snapshot of the most recently loaded processor spec map. Callers
      * use this to diff the next load against the one that's currently
      * running — see [Pipeline.applyReload]. */
-    fun lastSpecs(): MutableMap<String, ProcessorSpec> {
+    fun lastSpecs(): Map<String, ProcessorSpec> {
         return lastSpecs
     }
 
@@ -115,65 +103,62 @@ class ConfigLoader @JvmOverloads constructor(
         return load(normalizeTop(parsed))
     }
 
-    private fun load(effective: MutableMap<String, Any>): PipelineGraphKt {
+    private fun load(effective: Map<String, Any>): PipelineGraphKt {
         val flowRaw = effective["flow"]
-        require(flowRaw is MutableMap<*, *>) { "config: missing 'flow' section" }
+        require(flowRaw is Map<*, *>) { "config: missing 'flow' section" }
 
         // --- processors ---
-        val procsRaw = flowRaw.get("processors")
-        require(procsRaw is MutableMap<*, *>) { "config: 'flow.processors' must be a map" }
+        val procsRaw = flowRaw["processors"] as? Map<*, *> ?: throw IllegalStateException("config: 'flow.processors' must be a map")
         val processors: MutableMap<String, Processor> = mutableMapOf()
         val specs: MutableMap<String, ProcessorSpec> = mutableMapOf()
         for (entry in procsRaw.entries) {
-            val name: String = entry.key.toString()
-            require(entry.value is MutableMap<*, *>) { "config: processor '" + name + "' must be a map" }
-            val type: Any = def[TYPE_KEY]!!
-            requireNotNull(type) { "config: processor '" + name + "' missing 'type'" }
-            val config: MutableMap<String, String> = stringMap(def[CONFIG_KEY])
-            val spec = ProcessorSpec(type.toString(), config)
+            val name: String = entry.key as String
+            val processor = entry.value as? Map<*, Any?> ?: throw IllegalStateException("config: processor '$name' must be a map" )
+            val type = processor[TYPE_KEY]?.toString() ?: throw IllegalStateException("config: processor '$name' missing 'type'")
+            val config = stringMap(processor[CONFIG_KEY])
+            val spec = ProcessorSpec(type, config)
 
             // Reuse the prior processor instance when the spec is
             // byte-identical — keeps in-flight state (counters, caches,
             // connections) across a reload instead of churning every
             // processor on a cosmetic config change.
-            val p: Processor?
             val prior = lastSpecs.get(name)
-            p = if (prior != null && prior == spec && lastProcessors.containsKey(name)) {
-                lastProcessors[name]
+            val p = if (prior != null && prior == spec && lastProcessors.containsKey(name)) {
+                lastProcessors[name]!!
             } else {
-                registry.create(spec.type, spec.config, context)
+                registry.create(spec.type, spec.config, context)!!
             }
             processors[name] = p
             specs[name] = spec
         }
 
         // --- connections ---
-        val connections: MutableMap<String, MutableMap<String, MutableList<String>>> = mutableMapOf()
+        val connections: MutableMap<String, MutableMap<String, List<String>>> = mutableMapOf()
 //            HashMap<String, MutableMap<String, MutableList<String>>>()
         val connsRaw = flowRaw["connections"]
         if (connsRaw is MutableMap<*, *>) {
             for (fromEntry in connsRaw.entries) {
                 val from: String = fromEntry.key.toString()
                 require(fromEntry.value is MutableMap<*, *>) { "config: connections['" + from + "'] must be a map of relationship → targets" }
-                val relationships: MutableMap<String, MutableList<String>> = mutableMapOf()
+                val relationships: MutableMap<String, List<String>> = mutableMapOf()
                 for (relEntry in relationships.entries) {
                     val rel: String = relEntry.key
-                    val targets: MutableList<String?> = stringList(relEntry.value)
+                    val targets: List<String> = stringList(relEntry.value)
                     relationships[rel] = targets
                 }
-                connections.put(from, relationships)
+                connections[from] = relationships
             }
         }
 
         // --- entry points ---
-        val entryPoints: MutableList<String?> = stringList(flowRaw.get("entryPoints"))
+        val entryPoints: List<String> = stringList(flowRaw["entryPoints"])
         require(!entryPoints.isEmpty()) { "config: 'flow.entryPoints' must be a non-empty list" }
         for (ep in entryPoints) {
-            require(processors.containsKey(ep)) { "config: entryPoint '" + ep + "' is not defined in processors" }
+            require(processors.containsKey(ep)) { "config: entryPoint '$ep' is not defined in processors" }
         }
         for (connEntry in connections.entries) {
             val from = connEntry.key
-            require(processors.containsKey(from)) { "config: connection source '" + from + "' is not defined" }
+            require(processors.containsKey(from)) { "config: connection source '$from' is not defined" }
         }
 
         // Full DAG check — accumulates every unknown-target error plus
@@ -182,8 +167,8 @@ class ConfigLoader @JvmOverloads constructor(
         // once; warnings surface through the logger.
         val validation = FlowValidator.validate(processors.keys, connections)
         require(validation.errors.isEmpty()) {
-            ("config: flow validation failed with " + validation.errors.size + " error(s):\n"
-                    + String.join("\n", validation.errors))
+            ("config: flow validation failed with ${validation.errors.size} error(s):\n"
+                    + validation.errors.joinToString("\n"))
         }
         for (warn in validation.warnings) {
             log.warn("flow warning: {}", warn)
@@ -195,8 +180,10 @@ class ConfigLoader @JvmOverloads constructor(
         // Use an ordered unmodifiable view so spec iteration follows
         // declaration order (YAML round-trip relies on this).
         lastSpecs = specs
-        lastProcessors = mutableMapOf(processors)
-            Collections.unmodifiableMap<kotlin.String?, Processor?>(LinkedHashMap<kotlin.String?, Processor?>(processors))
+
+        lastProcessors.clear()
+        lastProcessors.putAll(processors)
+//            Collections.unmodifiableMap<kotlin.String?, Processor?>(LinkedHashMap<kotlin.String?, Processor?>(processors))
         lastSources = buildSources(effective["sources"])
         lastProviders = buildProviders(effective.get("providers"))
         return PipelineGraphKt(processors, connections, entryPoints)
@@ -273,12 +260,14 @@ class ConfigLoader @JvmOverloads constructor(
         val out: MutableList<Source> = mutableListOf()
         for (entry in sourcesRaw.entries) {
             val name: String = entry.key.toString()
-            require(entry.value is MutableMap<*, *>) { "config: source '" + name + "' must be a map with 'type' + 'config'" }
-            val typeRaw: Any = def[TYPE_KEY]!!
-            val sourceConfig = if (false)
-                stringKeyed(c)
-            else
+            val sourceRoot = entry.value as? Map<*, *> ?: throw IllegalStateException("config: source '$name' must be a map with 'type' + 'config'" )
+
+            val typeRaw: Any = sourceRoot[TYPE_KEY]!!
+            val sourceConfig: MutableMap<String, Any> = if (sourceRoot[CONFIG_KEY] is MutableMap<*, *>) {
+                stringKeyed(sourceRoot[CONFIG_KEY] as MutableMap<*, *>)
+            } else {
                 mutableMapOf()
+            }
             val source = sourceRegistry.create(typeRaw.toString(), name, sourceConfig)
             if (source == null) {
                 log.info("source '{}' ({}): factory returned null — disabled", name, typeRaw)
@@ -286,7 +275,7 @@ class ConfigLoader @JvmOverloads constructor(
             }
             out.add(source)
         }
-        return List.copyOf<Source?>(out)
+        return out.toMutableList()
     }
 
     companion object {
@@ -302,15 +291,15 @@ class ConfigLoader @JvmOverloads constructor(
             return raw.mapNotNull { (k, v) -> v?.let { k.toString() to v } }.toMap().toMutableMap()
         }
 
-        private fun stringMap(raw: Any?): MutableMap<String, String> {
-            if (raw == null) return mutableMapOf()
-            require(raw is MutableMap<*, *>) { "config: expected a map, got " + raw.javaClass.getSimpleName() }
-            return raw.entries.associate { (k, v) -> "$k" to if(v == null) "" else "$v" }.toMutableMap()
+        private fun stringMap(raw: Any?): Map<String, String> {
+            if (raw == null) return mapOf()
+            require(raw is Map<*, *>) { "config: expected a map, got " + raw.javaClass.getSimpleName() }
+            return raw.entries.associate { (k, v) -> "$k" to if(v == null) "" else "$v" }
         }
 
-        private fun stringList(raw: Any?): MutableList<String> {
-            if (raw == null) return mutableListOf()
-            require(raw is MutableList<*>) { "config: expected a list, got " + raw.javaClass.getSimpleName() }
+        private fun stringList(raw: Any?): List<String> {
+            if (raw == null) return listOf()
+            require(raw is List<*>) { "config: expected a list, got " + raw.javaClass.getSimpleName() }
             return raw.map { it as String }.toMutableList()
         }
 
