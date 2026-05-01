@@ -23,6 +23,7 @@ dependencies {
     implementation(libs.jackson.core)
     implementation(libs.jackson.jsr310)
     implementation(libs.jackson.df.csv)
+    implementation(libs.jackson.df.yaml)
     implementation(libs.jackson.kotlin)
     implementation(libs.apache.avro)
     implementation(libs.apache.jexl3)

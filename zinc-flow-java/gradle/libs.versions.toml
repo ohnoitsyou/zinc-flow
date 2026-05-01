@@ -20,8 +20,9 @@ guava = { module = "com.google.guava:guava", version.ref = "guava" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit-jupiter-engine" }
 javalin = { module = "io.javalin:javalin", version.ref = "javalin" }
 jackson-core = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
-jackson-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson"}
-jackson-df-csv = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-csv", version.ref = "jackson"}
+jackson-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }
+jackson-df-csv = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-csv", version.ref = "jackson" }
+jackson-df-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml", version.ref = "jackson" }
 jackson-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jacksonKotlin" }
 apache-avro = { module ="org.apache.avro:avro", version.ref = "avro" }
 apache-jexl3 = { module = "org.apache.commons:commons-jexl3", version.ref = "jexl3" }

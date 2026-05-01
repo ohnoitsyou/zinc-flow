@@ -6,8 +6,6 @@ import org.yaml.snakeyaml.Yaml
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.List
-import java.util.Map
 
 /** Loads a base config plus optional local / secrets overlays and
  * deep-merges them into a single effective config. Tracks which
@@ -51,12 +49,12 @@ object ConfigOverlay {
         val local = readLayer("local", localPath)
         val secrets = readLayer("secrets", secretsPath)
 
-        val effective: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        val provenance: MutableMap<String?, String?> = LinkedHashMap<String?, String?>()
+        val effective = mutableMapOf<String, Any>()
+        val provenance = mutableMapOf<String, String>()
         merge(effective, provenance, base.content, base.role, "")
         merge(effective, provenance, local.content, local.role, "")
         merge(effective, provenance, secrets.content, secrets.role, "")
-        return Resolved(basePath, List.of<Layer?>(base, local, secrets), effective, provenance)
+        return Resolved(basePath, mutableListOf(base, local, secrets), effective, provenance)
     }
 
     fun resolveLocalPath(basePath: Path?): Path {
@@ -65,7 +63,7 @@ object ConfigOverlay {
         return if (basePath == null)
             Path.of(DEFAULT_LOCAL_NAME)
         else
-            basePath.toAbsolutePath().getParent().resolve(DEFAULT_LOCAL_NAME)
+            basePath.toAbsolutePath().parent.resolve(DEFAULT_LOCAL_NAME)
     }
 
     fun resolveSecretsPath(basePath: Path?): Path {
@@ -74,93 +72,80 @@ object ConfigOverlay {
         return if (basePath == null)
             Path.of(DEFAULT_SECRETS_NAME)
         else
-            basePath.toAbsolutePath().getParent().resolve(DEFAULT_SECRETS_NAME)
+            basePath.toAbsolutePath().parent.resolve(DEFAULT_SECRETS_NAME)
     }
 
+    // I think this might be the root of the yaml parsing.
     @Throws(IOException::class)
     private fun readLayer(role: String?, path: Path?): Layer {
         if (path == null || !Files.isRegularFile(path)) {
-            return Layer(role, path, false, Map.of<String?, Any?>())
+            return Layer(role, path, false, mapOf())
         }
         val yaml = Files.readString(path)
-        if (yaml.isBlank()) return Layer(role, path, true, Map.of<String?, Any?>())
-        val parsed = Yaml().load<Any?>(yaml)
-        if (parsed == null) return Layer(role, path, true, Map.of<String?, Any?>())
-        require(parsed is MutableMap<*, *>) { "overlay '" + role + "' (" + path + ") must be a YAML map, got " + parsed.javaClass.getSimpleName() }
-        return Layer(role, path, true, normalizeKeys(parsed as MutableMap<Any?, Any?>))
+        if (yaml.isBlank()) return Layer(role, path, true, mapOf())
+        val parsed = Yaml().load<Any?>(yaml) ?: return Layer(role, path, true, mutableMapOf())
+        require(parsed is Map<*, *>) { "overlay '$role' ($path) must be a YAML map, got ${parsed.javaClass.getSimpleName()}" }
+        return Layer(role, path, true, normalizeKeys(parsed as Map<Any, Any>))
     }
 
     /** Recursive deep-merge: `src` onto `dst` with
      * dot-path provenance tracking into `provenance`. */
     private fun merge(
-        dst: MutableMap<String?, Any?>,
-        provenance: MutableMap<String?, String?>,
-        src: MutableMap<String?, Any?>?,
+        dst: MutableMap<String, Any>,
+        provenance: MutableMap<String, String>,
+        src: Map<String, Any>,
         layerRole: String?,
         parentPath: String
     ) {
-        if (src == null || src.isEmpty()) return
-        for (entry in src.entries) {
-            val key: String = entry.key!!
-            val value = entry.value
-            val path = if (parentPath.isEmpty()) key else parentPath + "." + key
+        if (src.isEmpty()) return
+        for ((key, value) in src.entries) {
+            val path = if (parentPath.isEmpty()) key else "$parentPath.$key"
 
-            val existing = dst.get(key)
-            if (existing is MutableMap<*, *>
-                && value is MutableMap<*, *>
-            ) {
-                val mergedChild: MutableMap<String?, Any?> =
-                    LinkedHashMap<String?, Any?>(existing as MutableMap<String?, Any?>)
-                merge(mergedChild, provenance, value as MutableMap<String?, Any?>, layerRole, path)
-                dst.put(key, mergedChild)
+            val existing = dst[key]
+            if (existing is Map<*, *> && value is Map<*, *>) {
+                // This feels inefficient, but if it's only done during load... it's probably fine
+                val mergedChild = existing.entries
+                    .associate { (key, value) -> key.toString() to (value as Any) }
+                    .toMutableMap()
+                val mappedValue = value.entries
+                    .associate { (key, value) -> key.toString() to (value as Any) }
+
+                merge(mergedChild, provenance, mappedValue, layerRole, path)
+                dst[key] = mergedChild
             } else {
-                dst.put(key, deepCopyValue(value))
-                provenance.put(path, layerRole)
+                dst[key] = deepCopyValue(value)
+                provenance[path] = layerRole ?: ""
             }
         }
     }
 
-    private fun normalizeKeys(raw: MutableMap<Any?, Any?>): MutableMap<String?, Any?> {
-        val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        for (entry in raw.entries) {
-            val v = entry.value
-            val normalized = if (v is MutableMap<*, *>)
-                normalizeKeys(v as MutableMap<Any?, Any?>)
-            else
-                v
-            out.put(entry.key.toString(), normalized)
+    private fun normalizeKeys(raw: Map<Any, Any>): Map<String, Any> {
+        return raw.entries.associate { (key, value) ->
+            key.toString() to (value.takeUnless { value is Map<*, *> } ?: normalizeKeys(value as Map<Any, Any>))
         }
-        return out
     }
 
-    private fun deepCopy(src: MutableMap<String?, Any?>): MutableMap<String?, Any?> {
-        val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        for (entry in src.entries) {
-            out.put(entry.key, deepCopyValue(entry.value))
-        }
-        return out
+    private fun deepCopy(src: Map<String, Any>): Map<String, Any> {
+        return src.entries.associate { (key, value) -> key to deepCopyValue(value) }
     }
 
-    private fun deepCopyValue(v: Any?): Any? {
-        if (v is MutableMap<*, *>) return deepCopy(v as MutableMap<String?, Any?>)
-        if (v is MutableList<*>) {
-            val out: MutableList<Any?> = ArrayList<Any?>(v.size)
-            for (o in v) out.add(deepCopyValue(o))
-            return out
+    private fun deepCopyValue(v: Any): Any {
+        return when (v) {
+            is Map<*, *> -> deepCopy(v as Map<String, Any>)
+            is List<*> -> v.map { deepCopyValue(it as Any) }
+            else -> v
         }
-        return v
     }
 
     /** A single layer in the overlay stack, with where the bytes came
      * from, the role (base / local / secrets), and whether the file
      * was actually present. */
-    class Layer(@JvmField val role: String?, val path: Path?, @JvmField val present: Boolean, content: MutableMap<String?, Any?>?) {
-        val content: MutableMap<String?, Any?>?
-
-        init {
-            var content = content
-            content = if (content == null) Map.of<String?, Any?>() else deepCopy(content)
-            this.content = content
+    @ConsistentCopyVisibility
+    data class Layer private constructor(@JvmField val role: String?, val path: Path?, @JvmField val present: Boolean, val content: Map<String, Any> = mapOf()) {
+        companion object {
+            operator fun invoke(role: String?, path: Path?, present: Boolean, content: Map<String, Any> = mapOf()): Layer {
+                return Layer(role, path, present, deepCopy(content))
+            }
         }
     }
 

@@ -1,5 +1,7 @@
 package zincflow.fabric
 
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.yaml.snakeyaml.Yaml
@@ -33,10 +35,6 @@ import java.nio.file.Path
  * router:
  * high: [sink]
  * unmatched: [sink]
- *
- * p
- *
- *
  */
 /*
 
@@ -133,6 +131,10 @@ class ConfigLoader(
         return load(normalizeTop(parsed))
     }
 
+    private fun loadFromYamlFile(path: Path) {
+        val flow = yamlParser.readValue<FlowWrapper>(path.toFile())
+    }
+
     private fun load(effective: Map<String, Any>): PipelineGraphKt {
         val flowRaw = effective["flow"]
         require(flowRaw is Map<*, *>) { "config: missing 'flow' section" }
@@ -169,7 +171,7 @@ class ConfigLoader(
         if (connsRaw is MutableMap<*, *>) {
             for (fromEntry in connsRaw.entries) {
                 val from: String = fromEntry.key.toString()
-                require(fromEntry.value is MutableMap<*, *>) { "config: connections['" + from + "'] must be a map of relationship → targets" }
+                require(fromEntry.value is MutableMap<*, *>) { "config: connections['$from'] must be a map of relationship → targets" }
                 val relationships: MutableMap<String, List<String>> = mutableMapOf()
                 for (relEntry in relationships.entries) {
                     val rel: String = relEntry.key
@@ -324,6 +326,8 @@ class ConfigLoader(
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(ConfigLoader::class.java)
+        private val yamlParser = YAMLMapper()
+
 
         /** Shared YAML keys for `{type, config}` blocks (processors,
          * sources, and — soon — providers). Also used by the admin HTTP
@@ -355,3 +359,29 @@ class ConfigLoader(
         }
     }
 }
+
+/**
+ * The root wrapper for the YAML document.
+ */
+data class FlowWrapper(
+    val flow: FlowDefinition
+)
+
+/**
+ * Defines the structure of the flow, including entry points,
+ * processor definitions, and their connections.
+ */
+data class FlowDefinition(
+    val entryPoints: List<String>,
+    val processors: Map<String, Processor>,
+    val connections: Map<String, Map<String, List<String>>>
+)
+
+/**
+ * Represents an individual processor unit.
+ * 'config' is a Map to allow for varying configurations based on the processor type.
+ */
+data class Processor(
+    val type: String,
+    val config: Map<String, Any>
+)
