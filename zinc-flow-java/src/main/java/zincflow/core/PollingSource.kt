@@ -60,7 +60,7 @@ abstract class PollingSource protected constructor(private val name: String, pol
      * `false`). Default logs at debug — subclasses can retry,
      * quarantine, or drop. */
     protected open fun onRejected(ff: FlowFile) {
-        log.debug("source {}: pipeline rejected {}", name, ff.stringId())
+        log.debug("source $name: pipeline rejected ${ff.stringId()}")
     }
 
     @Synchronized
@@ -68,7 +68,7 @@ abstract class PollingSource protected constructor(private val name: String, pol
         if (running) return
         running = true
         loop = Thread.ofVirtual().name("zinc-flow-source-$name").start { runLoop(ingest) }
-        log.info("source {} started ({} type, poll={}ms)", name, sourceType(), pollIntervalMillis)
+        log.info("source $name started (${sourceType()} type, poll=${pollIntervalMillis}ms)")
     }
 
     @Synchronized
@@ -77,7 +77,7 @@ abstract class PollingSource protected constructor(private val name: String, pol
         running = false
         loop?.interrupt() ?: return
         loop = null
-        log.info("source {} stopped", name)
+        log.info("source $name stopped")
     }
 
     private fun runLoop(ingest: (FlowFile) -> Boolean) {
@@ -89,7 +89,7 @@ abstract class PollingSource protected constructor(private val name: String, pol
                     val accepted: Boolean = try {
                         ingest(ff)
                     } catch (ex: RuntimeException) {
-                        log.warn("source {}: ingest threw for {} — {}", name, ff.stringId(), ex.toString())
+                        log.warn("source $name: ingest threw for ${ff.stringId()} — $ex")
                         false
                     }
                     if (accepted) onIngested(ff)

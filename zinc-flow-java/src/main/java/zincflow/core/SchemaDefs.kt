@@ -16,7 +16,6 @@ import java.util.Locale
  * Supported types: boolean/bool, int/int32, long/int64, float/float32,
  * double/float64, bytes, string. Unknown types throw — matches C#. */
 object SchemaDefs {
-    @JvmStatic
     fun parse(recordName: String, fieldDefs: String): Schema? {
         if (fieldDefs.isBlank()) return null
 

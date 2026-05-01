@@ -1,7 +1,5 @@
 package zincflow.core
 
-import java.util.List
-
 /** Result of a single [Processor.process] call. Sealed
  * so the executor can pattern-match on the shape:
  * 
@@ -12,97 +10,57 @@ import java.util.List
  *  * [Dropped] — terminate this branch; no downstream dispatch
  *  * [Failure] — follow "failure" connections (or log+drop if none)
  */
-interface ProcessorResult {
-    @JvmRecord
-    data class Single(@JvmField val flowFile: FlowFile?) : ProcessorResult {
-        init {
-            requireNotNull(flowFile) { "flowFile must not be null" }
+sealed class ProcessorResult {
+    @ConsistentCopyVisibility
+    data class Single private constructor(val flowFile: FlowFile) : ProcessorResult() {
+        companion object {
+            operator fun invoke(flowFile: FlowFile): ProcessorResult {
+                return Single(FlowFile(flowFile.id, flowFile.attributes, flowFile.content,
+                    flowFile.timestampMillis, flowFile.hopCount))
+            }
         }
     }
 
-    class Multiple(flowFiles: MutableList<FlowFile?>?) : ProcessorResult {
-        val flowFiles: MutableList<FlowFile?>?
-
-        init {
-            var flowFiles = flowFiles
-            requireNotNull(flowFiles) { "flowFiles must not be null" }
-            flowFiles = List.copyOf<FlowFile?>(flowFiles)
-            this.flowFiles = flowFiles
+    @ConsistentCopyVisibility
+    data class Multiple private constructor(val flowFiles: List<FlowFile>) : ProcessorResult() {
+        companion object {
+            operator fun invoke(flowFiles: List<FlowFile>): Multiple {
+                return Multiple(flowFiles.toList())
+            }
         }
     }
 
-    @JvmRecord
-    data class Routed(@JvmField val route: String?, @JvmField val flowFile: FlowFile?) : ProcessorResult {
-        init {
-            require(!(route == null || route.isEmpty())) { "route must not be blank" }
-            requireNotNull(flowFile) { "flowFile must not be null" }
+    @ConsistentCopyVisibility
+    data class Routed private constructor(val route: String, val flowFile: FlowFile) : ProcessorResult() {
+        companion object {
+            operator fun invoke(route: String, flowFile: FlowFile): Routed {
+                return Routed(route, FlowFile(flowFile.id, flowFile.attributes, flowFile.content,
+                    flowFile.timestampMillis, flowFile.hopCount))
+            }
         }
     }
 
     /** Emit N FlowFiles on N different relationships. Used by record-level
      * routing primitives (e.g. RouteRecord) that partition one incoming
      * batch into several outputs, each tagged with its route name. */
-    class MultiRouted(outputs: MutableList<Entry?>?) : ProcessorResult {
-        @JvmRecord
-        data class Entry(val route: String?, val flowFile: FlowFile?) {
-            init {
-                require(!(route == null || route.isEmpty())) { "route must not be blank" }
-                requireNotNull(flowFile) { "flowFile must not be null" }
+    @ConsistentCopyVisibility
+    data class MultiRouted private constructor(val outputs: List<Routed>) : ProcessorResult() {
+        companion object {
+            operator fun invoke(outputs: List<Routed>): MultiRouted {
+                return MultiRouted(outputs)
             }
         }
-
-        val outputs: MutableList<Entry?>?
-
-        init {
-            var outputs = outputs
-            requireNotNull(outputs) { "outputs must not be null" }
-            outputs = List.copyOf<Entry?>(outputs)
-            this.outputs = outputs
-        }
     }
 
-    /** Singleton — no state, reuse the shared instance. */
-    enum class Dropped : ProcessorResult {
-        INSTANCE
-    }
+    object Dropped : ProcessorResult() { }
 
-    class Failure(reason: String?, val flowFile: FlowFile?) : ProcessorResult {
-        val reason: String?
-
-        init {
-            var reason = reason
-            if (reason == null) reason = ""
-            requireNotNull(flowFile) { "flowFile must not be null" }
-            this.reason = reason
-        }
-    }
-
-    companion object {
-        // Static factories for ergonomics — match the C# ctor sites' feel.
-        @JvmStatic
-        fun single(ff: FlowFile?): ProcessorResult {
-            return Single(ff)
-        }
-
-        fun multiple(ffs: MutableList<FlowFile?>?): ProcessorResult {
-            return Multiple(ffs)
-        }
-
-        fun routed(route: String?, ff: FlowFile?): ProcessorResult {
-            return Routed(route, ff)
-        }
-
-        fun multiRouted(outputs: MutableList<MultiRouted.Entry?>?): ProcessorResult {
-            return MultiRouted(outputs)
-        }
-
-        @JvmStatic
-        fun dropped(): ProcessorResult {
-            return Dropped.INSTANCE
-        }
-
-        fun failure(reason: String?, ff: FlowFile?): ProcessorResult {
-            return Failure(reason, ff)
+    @ConsistentCopyVisibility
+    data class Failure private constructor(val reason: String, val flowFile: FlowFile) : ProcessorResult() {
+        companion object {
+            operator fun invoke(reason: String, flowFile: FlowFile): Failure {
+                return Failure(reason, FlowFile(flowFile.id, flowFile.attributes, flowFile.content,
+                    flowFile.timestampMillis, flowFile.hopCount))
+            }
         }
     }
 }

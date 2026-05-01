@@ -13,6 +13,7 @@ import org.apache.avro.Schema
  * (QueryRecord, TransformRecord, ExtractRecordField) ignore it. Format
  * writers fall back to inferring a schema from the first record when
  * the field is absent. */
+@ConsistentCopyVisibility
 data class RecordContent private constructor(
     val records: List<Map<String, Any?>>,
     val schema: Schema? = null

@@ -23,7 +23,7 @@ interface ProviderPlugin {
     /** Stable identifier — maps to the `type:` field under a
      * `providers:` block in config.yaml. Must be unique across
      * registered (type, version) pairs. */
-    fun providerType(): String?
+    fun providerType(): String
 
     /** Semver version. Default `"1.0.0"`. A plugin jar with a
      * higher version than the built-in of the same type replaces the
@@ -38,13 +38,13 @@ interface ProviderPlugin {
     }
 
     /** Config keys the provider accepts — surfaced to admin tooling. */
-    fun configKeys(): MutableList<String?> {
-        return mutableListOf<String?>()
+    fun configKeys(): List<String> {
+        return listOf()
     }
 
     /** Instantiate the provider from its config. Return `null`
      * when the provider should be skipped (e.g. a conditional provider
      * whose enabling config key is absent). Return a non-null
      * [Provider] to have it added to the context and enabled. */
-    fun create(config: MutableMap<String?, Any?>?): Provider?
+    fun create(config: MutableMap<String, Any>): Provider?
 }

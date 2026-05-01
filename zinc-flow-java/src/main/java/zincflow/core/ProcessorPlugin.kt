@@ -1,7 +1,5 @@
 package zincflow.core
 
-import java.util.List
-
 /** SPI for third-party processors. Drop a JAR into the plugins directory
  * with a `META-INF/services/zincflow.core.ProcessorPlugin` entry
  * listing fully qualified class names, and the zinc-flow-java
@@ -18,7 +16,7 @@ interface ProcessorPlugin {
      * `/api/processors/add`. Must be unique across all registered
      * (type, version) pairs — a second plugin with the same type + version
      * overwrites the first (last loader wins). */
-    fun type(): String?
+    fun type(): String
 
     /** Semver version for this processor. Exposed via
      * `GET /api/processor-types` so config authors can pin via
@@ -35,17 +33,17 @@ interface ProcessorPlugin {
 
     /** Config keys the processor accepts — surfaced to the UI so it
      * can render an "add processor" form. */
-    fun configKeys(): MutableList<String?> {
-        return mutableListOf<String?>()
+    fun configKeys(): MutableList<String> {
+        return mutableListOf()
     }
 
     /** Result relationships this processor may produce
      * (e.g. [Relationships.SUCCESS], [Relationships.FAILURE],
      * [Relationships.MATCHED]). Used by the UI connection editor
      * to show the outbound ports. */
-    fun relationships(): MutableList<String?> {
-        return List.of<String?>(Relationships.SUCCESS, Relationships.FAILURE)
+    fun relationships(): List<String> {
+        return listOf(Relationships.SUCCESS, Relationships.FAILURE)
     }
 
-    fun create(config: MutableMap<String?, String?>?, context: ProcessorContext?): Processor?
+    fun create(config: MutableMap<String, String>, context: ProcessorContext): Processor?
 }

@@ -26,8 +26,8 @@ interface SourcePlugin {
 
     /** Config keys the source accepts — surfaced to the UI so it can
      * render an "add source" form. */
-    fun configKeys(): MutableList<String> {
-        return mutableListOf()
+    fun configKeys(): List<String> {
+        return listOf()
     }
 
     /** Instantiate the source given its config-file name and config
