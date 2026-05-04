@@ -20,14 +20,14 @@ class ProvenanceProvider @JvmOverloads constructor(capacity: Int = DEFAULT_CAPAC
 
     @JvmRecord
     data class Event(
-        @JvmField val flowFileId: Long,
-        @JvmField val type: EventType?,
-        @JvmField val component: String?,
-        @JvmField val details: String?,
-        @JvmField val timestampMillis: Long
+        val flowFileId: Long,
+        val type: EventType?,
+        val component: String?,
+        val details: String?,
+        val timestampMillis: Long
     )
 
-    private val buffer: Array<Event?>
+    private val buffer: Array<Event>
     private val capacity: Int
     private val lock = Any()
     private var head = 0 // next write slot
@@ -37,7 +37,7 @@ class ProvenanceProvider @JvmOverloads constructor(capacity: Int = DEFAULT_CAPAC
     private var state = ComponentState.DISABLED
 
     init {
-        require(capacity > 0) { "ProvenanceProvider capacity must be > 0, got " + capacity }
+        require(capacity > 0) { "ProvenanceProvider capacity must be > 0, got $capacity" }
         this.capacity = capacity
         this.buffer = arrayOfNulls<Event>(capacity)
     }
@@ -78,13 +78,13 @@ class ProvenanceProvider @JvmOverloads constructor(capacity: Int = DEFAULT_CAPAC
      * callers can sprinkle `record(...)` calls in hot paths
      * without a per-call enable check. */
     @JvmOverloads
-    fun record(flowFileId: Long, type: EventType?, component: String?, details: String? = "") {
-        if (!isEnabled()) return
+    fun record(flowFileId: Long, type: EventType, component: String?, details: String? = "") {
+        if (!isEnabled) return
         val evt = Event(
             flowFileId,
             type,
-            if (component == null) "" else component,
-            if (details == null) "" else details,
+            component ?: "",
+            details ?: "",
             System.currentTimeMillis()
         )
         synchronized(lock) {
@@ -110,13 +110,14 @@ class ProvenanceProvider @JvmOverloads constructor(capacity: Int = DEFAULT_CAPAC
 
     /** Most recent N events across every FlowFile, oldest first within
      * the window. If fewer than N are available all are returned. */
-    fun getRecent(n: Int): MutableList<Event?> {
-        if (n <= 0) return mutableListOf<Event?>()
-        val out: MutableList<Event?> = ArrayList<Event?>(min(n, capacity))
+    fun getRecent(n: Int): MutableList<Event> {
+        if (n <= 0) return mutableListOf()
+        val out: MutableList<Event> = ArrayList(min(n, capacity))
         synchronized(lock) {
-            val take = min(n, count)
-            val start = ((head - take) % capacity + capacity) % capacity
-            for (i in 0..<take) {
+            val toTake = min(n, count)
+            // (((10 - 5) % 20) + 20) % 20
+            val start = ((head - toTake) % capacity + capacity) % capacity
+            for (i in 0..<toTake) {
                 val e = buffer[(start + i) % capacity]
                 if (e != null) out.add(e)
             }
@@ -133,14 +134,13 @@ class ProvenanceProvider @JvmOverloads constructor(capacity: Int = DEFAULT_CAPAC
             return "Bounded ring buffer of FlowFile lifecycle events."
         }
 
-        override fun configKeys(): MutableList<String?> {
-            return mutableListOf<String?>("buffer")
+        override fun configKeys(): List<String> {
+            return listOf("buffer")
         }
 
-        override fun create(config: MutableMap<String?, Any?>): Provider {
-            val buf = config.get("buffer")
-            val capacity = if (buf is Number) buf.toInt() else DEFAULT_CAPACITY
-            return ProvenanceProvider(capacity)
+        override fun create(config: MutableMap<String, Any>): Provider {
+            val buf = config["buffer"]
+            return ProvenanceProvider(buf as? Int ?: DEFAULT_CAPACITY)
         }
     }
 

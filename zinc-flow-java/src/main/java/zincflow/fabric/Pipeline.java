@@ -420,8 +420,8 @@ public final class Pipeline {
     /// type or a different processor-def recorded; connection changes
     /// are tracked per-source. Results inform {@code /api/reload}'s
     /// response so operators can see what actually changed.
-    public ReloadDiff applyReload(PipelineGraph next) {
-        PipelineGraph before = this.graph;
+    public ReloadDiff applyReload(PipelineGraphKt next) {
+        PipelineGraphKt before = this.graph;
         int added = 0, removed = 0, updated = 0, connectionsChanged = 0;
 
         for (String name : before.processors().keySet()) {

@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import io.javalin.Javalin
 import io.javalin.config.JavalinConfig
 import io.javalin.http.Context
@@ -21,13 +20,13 @@ import zincflow.providers.ProvenanceProvider
 import zincflow.providers.SchemaRegistryProvider
 import zincflow.providers.VersionControlProvider
 import java.io.IOException
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
 import java.util.Locale
 import java.util.TreeMap
 import java.util.concurrent.Executors
+import kotlin.collections.mapOf
 import kotlin.collections.mutableMapOf
 import kotlin.concurrent.Volatile
 import kotlin.math.max
@@ -385,15 +384,15 @@ class HttpServer @JvmOverloads constructor(
     @Throws(Exception::class)
     private fun handleRegistry(ctx: Context) {
         val r = pipeline.registry()
-        val out: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+        val out = mutableListOf<MutableMap<String, Any>>()
         if (r != null) {
             // Emit the latest version of each type, matching the C# worker's
             // shape so the shared React UI consumes both uniformly.
             val latestByName = TreeMap<String?, Registry.TypeInfo>()
             for (info in r.listAll()) {
-                val prev = latestByName.get(info.name)
-                if (prev == null || TypeRefs.compareVersions(info.version, prev.version) > 0) {
-                    latestByName.put(info.name, info)
+                val prev = latestByName[info?.name]
+                if (prev == null || TypeRefs.compareVersions(info?.version ?: "1.0.0", prev.version) > 0) {
+                    latestByName[info?.name] = info!!
                 }
             }
             for (info in latestByName.values) {
@@ -439,13 +438,13 @@ class HttpServer @JvmOverloads constructor(
                 .contentType("application/json")
                 .result(
                     json.writeValueAsBytes(
-                        Map.of(
-                            "status", "reloaded",
-                            "added", diff.added,
-                            "removed", diff.removed,
-                            "updated", diff.updated,
-                            "connectionsChanged", diff.connectionsChanged,
-                            "total", diff.total()
+                        mapOf<String, Any>(
+                            "status" to "reloaded",
+                            "added" to diff.added,
+                            "removed" to diff.removed,
+                            "updated" to diff.updated,
+                            "connectionsChanged" to diff.connectionsChanged,
+                            "total" to diff.total()
                         )
                     )
                 )
@@ -461,15 +460,15 @@ class HttpServer @JvmOverloads constructor(
     // --- Health ---
     @Throws(Exception::class)
     private fun handleHealth(ctx: Context) {
-        val srcs: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+        val srcs = mutableListOf<MutableMap<String, Any>>()
         for (s in pipeline.sources().values) {
-            srcs.add(Map.of<String?, Any?>("name", s.name(), "type", s.sourceType(), "running", s.isRunning))
+            srcs.add(mutableMapOf("name" to s.name(), "type" to s.sourceType(), "running" to s.isRunning))
         }
         ctx.contentType("application/json").result(
             json.writeValueAsBytes(
-                Map.of<String?, Any?>(
-                    "status", "healthy",
-                    "sources", srcs
+                mapOf(
+                    "status" to "healthy",
+                    "sources" to srcs
                 )
             )
         )
@@ -478,15 +477,15 @@ class HttpServer @JvmOverloads constructor(
     // --- Providers ---
     @Throws(Exception::class)
     private fun handleProviders(ctx: Context) {
-        val out: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+        val out = mutableListOf<Map<String, Any>>()
         val pctx = pipeline.context()
         for (name in pctx.listProviders()) {
             val p = pctx.getProvider(name)
             out.add(
-                Map.of<String?, Any?>(
-                    "name", name,
-                    "type", if (p == null) "unknown" else p.providerType(),
-                    "state", if (p == null) "UNKNOWN" else p.state().name
+                mapOf(
+                    "name" to name,
+                    "type" to (p?.providerType() ?: "unknown"),
+                    "state" to (p?.state()?.name ?: "UNKNOWN")
                 )
             )
         }
@@ -533,7 +532,7 @@ class HttpServer @JvmOverloads constructor(
                 return
             }
         }
-        ctx.contentType("application/json").result(json.writeValueAsBytes(Companion.shape(prov.getRecent(n))))
+        ctx.contentType("application/json").result(json.writeValueAsBytes(shape(prov.getRecent(n))))
     }
 
     @Throws(Exception::class)
@@ -1139,20 +1138,15 @@ class HttpServer @JvmOverloads constructor(
     companion object {
         private val log: Logger = LoggerFactory.getLogger(HttpServer::class.java)
 
-        private fun shape(events: MutableList<ProvenanceProvider.Event>): MutableList<MutableMap<String?, Any?>?> {
-            val out: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>(events.size)
-            for (e in events) {
-                out.add(
-                    Map.of<String?, Any?>(
-                        "flowFileId", e.flowFileId,
-                        "type", e.type!!.name,
-                        "component", e.component,
-                        "details", e.details,
-                        "timestampMillis", e.timestampMillis
-                    )
-                )
-            }
-            return out
+        private fun shape(events: MutableList<ProvenanceProvider.Event>): MutableList<MutableMap<String, Any>> {
+            return events.map { e -> mapOf<String, Any>(
+                    "flowFileId" to e.flowFileId,
+                    "type" to e.type!!.name,
+                    "component" to (e.component ?: ""),
+                    "details" to (e.details ?: ""),
+                    "timestampMillis" to e.timestampMillis
+                ).toMutableMap()
+            }.toMutableList()
         }
 
         private fun typeInfoToJson(info: Registry.TypeInfo): MutableMap<String, Any> {
