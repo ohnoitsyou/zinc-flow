@@ -1,8 +1,10 @@
 package zincflow.fabric;
 
 import org.junit.jupiter.api.Test;
+import zincflow.core.Content;
 import zincflow.core.FlowFile;
 import zincflow.core.ProcessorContext;
+import zincflow.core.RawContent;
 
 import java.util.List;
 import java.util.Map;
@@ -45,7 +47,7 @@ final class ConfigLoaderTest {
                     a:
                       success: [b]
                 """;
-        var graph = new ConfigLoader(new Registry()).load(yaml);
+        var graph = new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml);
         assertEquals(List.of("b"), graph.next("a", "success"));
     }
 
@@ -58,7 +60,8 @@ final class ConfigLoaderTest {
                     x:
                       config: {}
                 """;
-        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry()).load(yaml));
+
+        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
     }
 
     @Test
@@ -70,7 +73,7 @@ final class ConfigLoaderTest {
                     x:
                       type: NotARealProcessor
                 """;
-        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry()).load(yaml));
+        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
     }
 
     @Test
@@ -82,7 +85,7 @@ final class ConfigLoaderTest {
                     real:
                       type: LogAttribute
                 """;
-        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry()).load(yaml));
+        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
     }
 
     @Test
@@ -97,7 +100,7 @@ final class ConfigLoaderTest {
                     a:
                       success: [nosuch]
                 """;
-        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry()).load(yaml));
+        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
     }
 
     @Test
@@ -119,9 +122,10 @@ final class ConfigLoaderTest {
                     router:
                       high: [elevate]
                 """;
-        var graph = new ConfigLoader(new Registry()).load(yaml);
+        var graph = new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml);
         var pipeline = new Pipeline(graph);
-        pipeline.ingest(FlowFile.create(new byte[0], Map.of("priority", "urgent")));
+        var ff = FlowFile.Companion.invoke(0, Map.of(), new RawContent(new byte[0]), 0, 0);
+        pipeline.ingest(ff);
         // Both router and elevate should have been dispatched.
         assertEquals(2L, pipeline.stats().snapshot().get("totalProcessed"));
     }

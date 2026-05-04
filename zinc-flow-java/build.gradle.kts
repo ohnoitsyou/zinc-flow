@@ -26,6 +26,7 @@ dependencies {
     implementation(libs.jackson.df.yaml)
     implementation(libs.jackson.kotlin)
     implementation(libs.apache.avro)
+    implementation(libs.apache.commons.collections)
     implementation(libs.apache.jexl3)
     implementation(libs.jsonPath)
     implementation(libs.snakeYaml)

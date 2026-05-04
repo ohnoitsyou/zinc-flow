@@ -14,6 +14,7 @@ snakeyaml = "2.3"
 slf4j = "2.0.16"
 logback = "1.5.12"
 micrometer = "1.14.2"
+commons-collections = "4.5.0"
 
 [libraries]
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
@@ -24,7 +25,8 @@ jackson-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr
 jackson-df-csv = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-csv", version.ref = "jackson" }
 jackson-df-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml", version.ref = "jackson" }
 jackson-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jacksonKotlin" }
-apache-avro = { module ="org.apache.avro:avro", version.ref = "avro" }
+apache-avro = { module = "org.apache.avro:avro", version.ref = "avro" }
+apache-commons-collections = { module = "org.apache.commons:commons-collections4", version.ref = "commons-collections" }
 apache-jexl3 = { module = "org.apache.commons:commons-jexl3", version.ref = "jexl3" }
 jsonPath = { module = "com.jayway.jsonpath:json-path", version.ref = "jsonPath" }
 snakeYaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }

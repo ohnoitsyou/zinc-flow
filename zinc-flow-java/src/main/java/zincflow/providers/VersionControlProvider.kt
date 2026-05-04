@@ -9,7 +9,6 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.nio.file.Path
-import java.util.List
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.Volatile
 
@@ -36,40 +35,17 @@ import kotlin.concurrent.Volatile
  * All commands run with a short timeout and stderr captured. Results
  * are surfaced as records so the admin API can echo them as JSON. */
 class VersionControlProvider(repo: Path?, gitBinary: String?, remote: String?, branch: String?) : Provider {
-    class CommandResult(@JvmField val ok: Boolean, @JvmField val exitCode: Int, stdout: String?, stderr: String?) {
-        val stdout: String?
-        val stderr: String?
+    data class CommandResult(val ok: Boolean, val exitCode: Int, val stdout: String = "", val stderr: String = "") { }
 
-        init {
-            var stdout = stdout
-            var stderr = stderr
-            stdout = if (stdout == null) "" else stdout
-            stderr = if (stderr == null) "" else stderr
-            this.stdout = stdout
-            this.stderr = stderr
-        }
-    }
+    data class Status(val enabled: Boolean, val clean: Boolean, val ahead: Int, val behind: Int, val branch: String?, val error: String?)
 
-    @JvmRecord
-    data class Status(
-        @JvmField val enabled: Boolean, @JvmField val clean: Boolean, @JvmField val ahead: Int, @JvmField val behind: Int,
-        val branch: String?, @JvmField val error: String?
-    )
-
-    private val repo: Path
-    private val gitBinary: String
-    private val remote: String
-    private val branch: String
+    val repo: Path = repo ?: Path.of(".")
+    val gitBinary: String = if (gitBinary.isNullOrEmpty()) "git" else gitBinary
+    val remote: String = if (remote.isNullOrEmpty()) "origin" else remote
+    val branch: String = if (branch.isNullOrEmpty()) "main" else branch
 
     @Volatile
     private var state = ComponentState.DISABLED
-
-    init {
-        this.repo = if (repo == null) Path.of(".") else repo
-        this.gitBinary = if (gitBinary == null || gitBinary.isEmpty()) "git" else gitBinary
-        this.remote = if (remote == null || remote.isEmpty()) "origin" else remote
-        this.branch = if (branch == null || branch.isEmpty()) "main" else branch
-    }
 
     override fun name(): String {
         return NAME
@@ -95,90 +71,67 @@ class VersionControlProvider(repo: Path?, gitBinary: String?, remote: String?, b
         state = ComponentState.DISABLED
     }
 
-    fun repo(): Path {
-        return repo
-    }
-
-    fun gitBinary(): String {
-        return gitBinary
-    }
-
-    fun remote(): String {
-        return remote
-    }
-
-    fun branch(): String {
-        return branch
-    }
-
     fun status(): Status {
-        if (!isEnabled()) return Status(false, false, 0, 0, "", "provider disabled")
+        if (!isEnabled) return Status(!ENABLED, !CLEAN, 0, 0, "", "provider disabled")
         try {
-            val branchRes = run(List.of<String?>(gitBinary, "rev-parse", "--abbrev-ref", "HEAD"))
-            val currentBranch = if (branchRes.ok) branchRes.stdout!!.trim { it <= ' ' } else branch
+            val branchRes = run(listOf(gitBinary, "rev-parse", "--abbrev-ref", "HEAD"))
+            val currentBranch = if (branchRes.ok) branchRes.stdout.trim() else branch
 
-            val dirty = run(List.of<String?>(gitBinary, "status", "--porcelain"))
-            val clean = dirty.ok && dirty.stdout!!.trim { it <= ' ' }.isEmpty()
+            val dirty = run(listOf(gitBinary, "status", "--porcelain"))
+            val clean = dirty.ok && dirty.stdout.trim().isEmpty()
 
             var ahead = 0
             var behind = 0
-            val revList = run(
-                List.of<String?>(
-                    gitBinary, "rev-list", "--left-right", "--count",
-                    "HEAD..." + remote + "/" + currentBranch
-                )
-            )
+            val revList = run(listOf(gitBinary, "rev-list", "--left-right", "--count", "HEAD...$remote/$currentBranch"))
             if (revList.ok) {
-                val parts: Array<String?> =
-                    revList.stdout!!.trim { it <= ' ' }.split("\\s+".toRegex()).dropLastWhile { it.isEmpty() }
-                        .toTypedArray()
+                val parts = revList.stdout.trim().split("\\s+".toRegex()).dropLastWhile { it.isEmpty() }
                 if (parts.size >= 2) {
                     try {
-                        ahead = parts[0]!!.toInt()
-                        behind = parts[1]!!.toInt()
-                    } catch (ignored: NumberFormatException) { /* leave at 0 */
+                        ahead = parts[0].toInt()
+                        behind = parts[1].toInt()
+                    } catch (_: NumberFormatException) { /* leave at 0 */
                     }
                 }
             }
-            return Status(true, clean, ahead, behind, currentBranch, "")
+            return Status(ENABLED, clean, ahead, behind, currentBranch, "")
         } catch (ex: Exception) {
-            return Status(true, false, 0, 0, "", ex.toString())
+            return Status(ENABLED, !CLEAN, 0, 0, "", ex.toString())
         }
     }
 
     fun commit(relPath: String?, message: String?): CommandResult {
-        if (!isEnabled()) return CommandResult(false, -1, "", "provider disabled")
-        if (message == null || message.isEmpty()) {
-            return CommandResult(false, -1, "", "commit message must not be blank")
+        if (!isEnabled) return CommandResult(!OK, -1, "", "provider disabled")
+        if (message.isNullOrEmpty()) {
+            return CommandResult(!OK, -1, "", "commit message must not be blank")
         }
         try {
-            val add = run(List.of<String?>(gitBinary, "add", if (relPath == null) "." else relPath))
+            val add = run(listOf(gitBinary, "add", relPath ?: "."))
             if (!add.ok) return add
-            return run(List.of<String?>(gitBinary, "commit", "-m", message))
+            return run(listOf(gitBinary, "commit", "-m", message))
         } catch (ex: Exception) {
-            return CommandResult(false, -1, "", ex.toString())
+            return CommandResult(!OK, -1, "", ex.toString())
         }
     }
 
     fun push(): CommandResult {
-        if (!isEnabled()) return CommandResult(false, -1, "", "provider disabled")
-        try {
-            return run(List.of<String?>(gitBinary, "push", remote, branch))
+        if (!isEnabled) return CommandResult(!OK, -1, "", "provider disabled")
+        return try {
+            run(listOf(gitBinary, "push", remote, branch))
         } catch (ex: Exception) {
-            return CommandResult(false, -1, "", ex.toString())
+            CommandResult(!OK, -1, "", ex.toString())
         }
     }
 
     /** Public for tests — lets the test fixture run arbitrary git
      * commands against the configured repo + binary. */
     @Throws(IOException::class, InterruptedException::class)
-    fun run(command: MutableList<String?>): CommandResult {
+    fun run(command: List<String>): CommandResult {
         val pb = ProcessBuilder(command).directory(repo.toFile()).redirectErrorStream(false)
         val proc = pb.start()
         val out = StringBuilder()
         val err = StringBuilder()
-        val outReader: Thread = streamInto(proc.getInputStream(), out)
-        val errReader: Thread = streamInto(proc.getErrorStream(), err)
+        val outReader: Thread = streamInto(proc.inputStream, out)
+        val errReader: Thread = streamInto(proc.errorStream, err)
         val done = proc.waitFor(15, TimeUnit.SECONDS)
         if (!done) proc.destroyForcibly()
         // Once the process exits (or is destroyed) the OS closes its
@@ -189,7 +142,7 @@ class VersionControlProvider(repo: Path?, gitBinary: String?, remote: String?, b
         outReader.join()
         errReader.join()
         if (!done) {
-            return CommandResult(false, -1, out.toString(), "timeout")
+            return CommandResult(!OK, -1, out.toString(), "timeout")
         }
         val exit = proc.exitValue()
         val ok = exit == 0
@@ -197,18 +150,18 @@ class VersionControlProvider(repo: Path?, gitBinary: String?, remote: String?, b
         return CommandResult(ok, exit, out.toString(), err.toString())
     }
 
-    fun statusJson(): MutableMap<String?, Any?> {
+    fun statusJson(): Map<String, Any> {
         val s = status()
-        val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        out.put("enabled", s.enabled)
-        out.put("clean", s.clean)
-        out.put("ahead", s.ahead)
-        out.put("behind", s.behind)
-        out.put("branch", s.branch)
-        out.put("remote", remote)
-        out.put("repo", repo.toString())
-        if (!s.error!!.isEmpty()) out.put("error", s.error)
-        return out
+        return buildMap {
+            put("enabled", s.enabled)
+            put("clean", s.clean)
+            put("ahead", s.ahead)
+            put("behind", s.behind)
+            put("branch", s.branch)
+            put("remote", remote)
+            put("repo", repo.toString())
+            if (!s.error!!.isEmpty()) put("error", s.error)
+        }
     }
 
     companion object {
@@ -217,20 +170,23 @@ class VersionControlProvider(repo: Path?, gitBinary: String?, remote: String?, b
         const val NAME: String = "version_control"
         const val TYPE: String = "VersionControlProvider"
 
+        private const val OK = true
+        private const val CLEAN = true
+        private const val ENABLED = true
+
         private fun streamInto(`in`: InputStream, sink: StringBuilder): Thread {
             // Virtual thread — drains an external process's stdout/stderr.
             // Blocking reads are a textbook fit for Loom and this pattern
             // fires twice per git invocation, so avoiding platform-thread
             // overhead matters under churn.
-            return Thread.ofVirtual().name("zinc-flow-git-stream").start(Runnable {
+            return Thread.ofVirtual().name("zinc-flow-git-stream").start {
                 try {
                     BufferedReader(InputStreamReader(`in`)).use { reader ->
                         var line: String?
                         while ((reader.readLine().also { line = it }) != null) sink.append(line).append('\n')
                     }
-                } catch (ignored: IOException) { /* best effort */
-                }
-            })
+                } catch (_: IOException) { /* best effort */ }
+            }
         }
     }
 }

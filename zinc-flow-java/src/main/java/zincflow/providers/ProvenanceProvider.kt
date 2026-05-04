@@ -1,8 +1,12 @@
 package zincflow.providers
 
+import jdk.internal.vm.ThreadContainers.container
+import org.apache.commons.collections4.queue.CircularFifoQueue
 import zincflow.core.ComponentState
 import zincflow.core.Provider
 import zincflow.core.ProviderPlugin
+import java.util.Collections
+import java.util.function.IntFunction
 import kotlin.concurrent.Volatile
 import kotlin.math.min
 
@@ -13,9 +17,9 @@ import kotlin.math.min
  * provenance off without rebuilding the pipeline.
  * 
  * Mirrors zinc-flow-csharp's ProvenanceProvider (Core/Providers.cs). */
-class ProvenanceProvider @JvmOverloads constructor(capacity: Int = DEFAULT_CAPACITY) : Provider {
+class ProvenanceProvider @JvmOverloads constructor(val capacity: Int = DEFAULT_CAPACITY) : Provider {
     enum class EventType {
-        CREATED, PROCESSED, ROUTED, DROPPED, FAILED
+        CREATED, PROCESSED, ROUTED, DROPPED, FAILED, UNKNOWN
     }
 
     @JvmRecord
@@ -25,10 +29,22 @@ class ProvenanceProvider @JvmOverloads constructor(capacity: Int = DEFAULT_CAPAC
         val component: String?,
         val details: String?,
         val timestampMillis: Long
-    )
+    ) {
+        companion object {
+            val EMPTY = Event(-1, EventType.UNKNOWN, "", "", 0)
+        }
+    }
 
-    private val buffer: Array<Event>
-    private val capacity: Int
+    class CircularBuffer<T> private constructor(override val size: Int = DEFAULT_CAPACITY, private val container: MutableList<T>) : MutableList<T> by container {
+        companion object {
+            operator fun <T>invoke(size: Int = DEFAULT_CAPACITY) : CircularBuffer<out T> {
+                return CircularBuffer(size, mutableListOf())
+            }
+        }
+    }
+
+    private val b = CircularBuffer<Event>(capacity)
+    private val buffer = CircularFifoQueue<Event>(capacity)
     private val lock = Any()
     private var head = 0 // next write slot
     private var count = 0
@@ -38,8 +54,6 @@ class ProvenanceProvider @JvmOverloads constructor(capacity: Int = DEFAULT_CAPAC
 
     init {
         require(capacity > 0) { "ProvenanceProvider capacity must be > 0, got $capacity" }
-        this.capacity = capacity
-        this.buffer = arrayOfNulls<Event>(capacity)
     }
 
     override fun name(): String {
@@ -88,36 +102,27 @@ class ProvenanceProvider @JvmOverloads constructor(capacity: Int = DEFAULT_CAPAC
             System.currentTimeMillis()
         )
         synchronized(lock) {
-            buffer[head] = evt
-            head = (head + 1) % capacity
-            if (count < capacity) count++
+            buffer.add(evt)
         }
     }
 
     /** Events for a single FlowFile, oldest first. Empty if none recorded
      * (either the id never appeared, or it was evicted). */
-    fun getEvents(flowFileId: Long): MutableList<Event?> {
-        val out: MutableList<Event?> = ArrayList<Event?>()
-        synchronized(lock) {
-            val start = if (count < capacity) 0 else head
-            for (i in 0..<count) {
-                val e = buffer[(start + i) % capacity]
-                if (e != null && e.flowFileId == flowFileId) out.add(e)
-            }
+    fun getEvents(flowFileId: Long): List<Event> {
+        return synchronized(lock) {
+            buffer.asIterable().asSequence().filter { it.flowFileId == flowFileId }.take(count).toList()
         }
-        return out
     }
 
     /** Most recent N events across every FlowFile, oldest first within
      * the window. If fewer than N are available all are returned. */
-    fun getRecent(n: Int): MutableList<Event> {
+    fun getRecent(n: Int): List<Event> {
         if (n <= 0) return mutableListOf()
-        val out: MutableList<Event> = ArrayList(min(n, capacity))
+        val out = mutableListOf<Event>()
         synchronized(lock) {
             val toTake = min(n, count)
-            // (((10 - 5) % 20) + 20) % 20
             val start = ((head - toTake) % capacity + capacity) % capacity
-            for (i in 0..<toTake) {
+            for (i in 0..< toTake) {
                 val e = buffer[(start + i) % capacity]
                 if (e != null) out.add(e)
             }

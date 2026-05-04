@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory
 import zincflow.core.FlowFile
 import zincflow.fabric.Pipeline.EditResult
 import zincflow.providers.ProvenanceProvider
+import zincflow.providers.ProvenanceProvider.EventType
 import zincflow.providers.SchemaRegistryProvider
 import zincflow.providers.VersionControlProvider
 import java.io.IOException
@@ -524,11 +525,11 @@ class HttpServer @JvmOverloads constructor(
         }
         var n = 50
         val nStr = ctx.queryParam("n")
-        if (nStr != null && !nStr.isEmpty()) {
+        if (!nStr.isNullOrEmpty()) {
             try {
                 n = nStr.toInt()
-            } catch (e: NumberFormatException) {
-                writeError(ctx, 400, "query param 'n' is not an integer: '" + nStr + "'")
+            } catch (_: NumberFormatException) {
+                writeError(ctx, 400, "query param 'n' is not an integer: '$nStr'")
                 return
             }
         }
@@ -561,8 +562,8 @@ class HttpServer @JvmOverloads constructor(
             return
         }
         try {
-            val name = body["name"].takeIf { it?.toString()?.isNotEmpty() == true } ?: throw IllegalArgumentException("Name is required but not provided")
-            val type = body[ConfigLoader.TYPE_KEY].takeIf { it?.toString()?.isNotEmpty() == true } ?: throw IllegalArgumentException("Type is required but not provided")
+            val name = body["name"]?.toString().takeIf { it?.isNotEmpty() == true } ?: throw IllegalArgumentException("Name is required but not provided")
+            val type = body[ConfigLoader.TYPE_KEY]?.toString().takeIf { it?.isNotEmpty() == true } ?: throw IllegalArgumentException("Type is required but not provided")
 
 //        val name: String = str(body["name"])
 //            val type: String = str(body[ConfigLoader.TYPE_KEY])
@@ -628,10 +629,7 @@ class HttpServer @JvmOverloads constructor(
         }
         ctx.contentType("application/json").result(
             json.writeValueAsBytes(
-                Map.of<String?, String?>(
-                    "name", name,
-                    "state", pipeline.processorState(name).name
-                )
+                mapOf("name" to name, "state" to pipeline.processorState(name).name)
             )
         )
     }
@@ -639,9 +637,8 @@ class HttpServer @JvmOverloads constructor(
     // --- Sources ---
     @Throws(Exception::class)
     private fun handleSources(ctx: Context) {
-        val out: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
-        for (s in pipeline.sources().values) {
-            out.add(Map.of<String?, Any?>("name", s.name(), "type", s.sourceType(), "running", s.isRunning))
+        val out = pipeline.sources().values.map { s ->
+            mapOf<String, Any>("name" to s.name(), "type" to s.sourceType(), "running" to s.isRunning)
         }
         ctx.contentType("application/json").result(json.writeValueAsBytes(out))
     }
@@ -669,6 +666,7 @@ class HttpServer @JvmOverloads constructor(
     }
 
     // --- Graph mutation (connections + entry points) ---
+    // TODO: Parse using data class
     @Throws(Exception::class)
     private fun handleAddConnection(ctx: Context) {
         val body = readJsonBody(ctx)
@@ -676,15 +674,16 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 400, "invalid json body")
             return
         }
-        val from: String = str(body.get("from"))
-        val rel: String = str(body.get("relationship"))
-        val to: String = str(body.get("to"))
+        val from: String = str(body["from"])
+        val rel: String = str(body["relationship"])
+        val to: String = str(body["to"])
         writeEditResult(
             ctx, pipeline.addConnection(from, rel, to),
-            Map.of<String?, Any?>("status", "added", "from", from, "relationship", rel, "to", to)
+            mapOf("status" to "added", "from" to from, "relationship" to rel, "to" to to)
         )
     }
 
+    // TODO: Parse using data class
     @Throws(Exception::class)
     private fun handleRemoveConnection(ctx: Context) {
         val body = readJsonBody(ctx)
@@ -692,15 +691,16 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 400, "invalid json body")
             return
         }
-        val from: String = str(body.get("from"))
-        val rel: String = str(body.get("relationship"))
-        val to: String = str(body.get("to"))
+        val from: String = str(body["from"])
+        val rel: String = str(body["relationship"])
+        val to: String = str(body["to"])
         writeEditResult(
             ctx, pipeline.removeConnection(from, rel, to),
-            Map.of<String?, Any?>("status", "removed", "from", from, "relationship", rel, "to", to)
+            mapOf("status" to "removed", "from" to from, "relationship" to rel, "to" to to)
         )
     }
 
+    // TODO: Parse using data class
     @Throws(Exception::class)
     private fun handleSetConnections(ctx: Context) {
         val from = ctx.pathParam("from")
@@ -709,23 +709,24 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 400, "invalid json body")
             return
         }
-        val rels: MutableMap<String?, MutableList<String?>?> = LinkedHashMap<String?, MutableList<String?>?>()
+        val relationships = mutableMapOf<String, List<String>>()
         for (entry in body.entries) {
-            if (entry.value is MutableList<*>) {
-                val targets: MutableList<String?> = ArrayList<String?>(list.size)
-                for (o in list) targets.add(str(o))
-                rels.put(entry.key, targets)
+            val list = entry.value
+            if (list is List<*>) {
+                val targets = list.map { str(it) }
+                relationships[entry.key] = targets
             } else {
                 writeError(ctx, 400, "relationship '" + entry.key + "' must map to a list of target names")
                 return
             }
         }
         writeEditResult(
-            ctx, pipeline.setConnections(from, rels),
-            Map.of<String?, Any?>("status", "replaced", "from", from, "relationships", rels)
+            ctx, pipeline.setConnections(from, relationships),
+            mapOf("status" to "replaced", "from" to from, "relationships" to relationships)
         )
     }
 
+    // TODO: Parse using data class
     @Throws(Exception::class)
     private fun handleSetEntryPoints(ctx: Context) {
         val body = readJsonBody(ctx)
@@ -733,21 +734,20 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 400, "invalid json body")
             return
         }
-        val namesObj = body.get("names")
-        if (namesObj !is MutableList<*>) {
+        val namesObj = body["names"]
+        if (namesObj !is List<*>) {
             writeError(ctx, 400, "body must include a 'names' array")
             return
         }
-        val names: MutableList<String?> = ArrayList<String?>(namesObj.size)
-        for (o in namesObj) names.add(str(o))
+        val names = namesObj.map { str(it) }
         writeEditResult(
             ctx, pipeline.setEntryPoints(names),
-            Map.of<String?, Any?>("status", "replaced", "names", names)
+            mapOf("status" to "replaced", "names" to names)
         )
     }
 
     @Throws(Exception::class)
-    private fun writeEditResult(ctx: Context, result: EditResult, okBody: MutableMap<String?, Any?>?) {
+    private fun writeEditResult(ctx: Context, result: EditResult, okBody: Map<String, Any>) {
         if (result.ok) {
             ctx.status(200).contentType("application/json").result(json.writeValueAsBytes(okBody))
         } else {
@@ -767,16 +767,16 @@ class HttpServer @JvmOverloads constructor(
     // --- Version control (opt-in git provider) ---
     private fun vc(): VersionControlProvider? {
         return pipeline.context()
-            .getProviderAs<VersionControlProvider?>(VersionControlProvider.NAME, VersionControlProvider::class.java)
+            .getProviderAs(VersionControlProvider.NAME, VersionControlProvider::class.java)
     }
 
     @Throws(Exception::class)
     private fun handleVcStatus(ctx: Context) {
         val v = vc()
-        if (v == null || !v.isEnabled()) {
+        if (v == null || !v.isEnabled) {
             ctx.contentType("application/json").result(
                 json.writeValueAsBytes(
-                    Map.of<String?, Boolean?>("enabled", false)
+                    mapOf("enabled" to false)
                 )
             )
             return
@@ -787,7 +787,7 @@ class HttpServer @JvmOverloads constructor(
     @Throws(Exception::class)
     private fun handleVcCommit(ctx: Context) {
         val v = vc()
-        if (v == null || !v.isEnabled()) {
+        if (v == null || !v.isEnabled) {
             writeError(ctx, 503, "version control provider not enabled")
             return
         }
@@ -796,19 +796,20 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 400, "invalid json body")
             return
         }
-        val message: String = str(body.get("message"))
+        val message = str(body["message"])
         if (message.isEmpty()) {
             writeError(ctx, 400, "commit message must not be blank")
             return
         }
-        val path: String? = if (body.get("path") == null) null else str(body.get("path"))
+        val path = if (body["path"] == null) null else str(body["path"])
 
         val r = v.commit(path, message)
-        val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        out.put("ok", r.ok)
-        out.put("exitCode", r.exitCode)
-        out.put("stdout", r.stdout())
-        out.put("stderr", r.stderr())
+        val out = buildMap<String, Any> {
+            put("ok", r.ok)
+            put("exitCode", r.exitCode)
+            put("stdout", r.stdout)
+            put("stderr", r.stderr)
+        }
         ctx.status(if (r.ok) 200 else 500).contentType("application/json")
             .result(json.writeValueAsBytes(out))
     }
@@ -816,16 +817,17 @@ class HttpServer @JvmOverloads constructor(
     @Throws(Exception::class)
     private fun handleVcPush(ctx: Context) {
         val v = vc()
-        if (v == null || !v.isEnabled()) {
+        if (v == null || !v.isEnabled) {
             writeError(ctx, 503, "version control provider not enabled")
             return
         }
         val r = v.push()
-        val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        out.put("ok", r.ok)
-        out.put("exitCode", r.exitCode)
-        out.put("stdout", r.stdout())
-        out.put("stderr", r.stderr())
+        val out = buildMap<String, Any> {
+            put("ok", r.ok)
+            put("exitCode", r.exitCode)
+            put("stdout", r.stdout)
+            put("stderr", r.stderr)
+        }
         ctx.status(if (r.ok) 200 else 500).contentType("application/json")
             .result(json.writeValueAsBytes(out))
     }
@@ -840,23 +842,19 @@ class HttpServer @JvmOverloads constructor(
         }
         var n = 50
         val nStr = ctx.queryParam("n")
-        if (nStr != null && !nStr.isEmpty()) {
+        if (!nStr.isNullOrEmpty()) {
             try {
                 n = nStr.toInt()
-            } catch (e: NumberFormatException) {
-                writeError(ctx, 400, "query param 'n' is not an integer: '" + nStr + "'")
+            } catch (_: NumberFormatException) {
+                writeError(ctx, 400, "query param 'n' is not an integer: '$nStr'")
                 return
             }
         }
         // Over-fetch to give the filter a real chance of returning n
         // failures even when non-failure events dominate the ring buffer.
         val window = max(n * 20, 500)
-        val recent: MutableList<ProvenanceProvider.Event> = prov.getRecent(window)
-        val failures: MutableList<ProvenanceProvider.Event> = ArrayList<ProvenanceProvider.Event>()
-        for (e in recent) {
-            if (e.type == ProvenanceProvider.EventType.FAILED) failures.add(e)
-            if (failures.size >= n) break
-        }
+        val recent = prov.getRecent(window)
+        val failures = recent.asSequence().filter { it.type == EventType.FAILED }.take(n).toList()
         ctx.contentType("application/json").result(json.writeValueAsBytes(shape(failures)))
     }
 
@@ -869,12 +867,11 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 400, "invalid json body")
             return
         }
-        val type: String? =
-            if (body.get(ConfigLoader.Companion.TYPE_KEY) == null) null else str(body.get(ConfigLoader.Companion.TYPE_KEY))
-        val config: MutableMap<String?, String?> = asStringMap(body.get(ConfigLoader.Companion.CONFIG_KEY))
+        val type: String? = if (body[ConfigLoader.TYPE_KEY] == null) null else str(body[ConfigLoader.TYPE_KEY])
+        val config = asStringMap(body[ConfigLoader.CONFIG_KEY])
 
         val r = pipeline.updateProcessorConfig(name, type, config)
-        writeEditResult(ctx, r, Map.of<String?, Any?>("status", "updated", "name", name))
+        writeEditResult(ctx, r, mapOf("status" to "updated", "name" to name))
     }
 
     @Throws(Exception::class)
@@ -1138,15 +1135,15 @@ class HttpServer @JvmOverloads constructor(
     companion object {
         private val log: Logger = LoggerFactory.getLogger(HttpServer::class.java)
 
-        private fun shape(events: MutableList<ProvenanceProvider.Event>): MutableList<MutableMap<String, Any>> {
+        private fun shape(events: List<ProvenanceProvider.Event>): List<Map<String, Any>> {
             return events.map { e -> mapOf<String, Any>(
                     "flowFileId" to e.flowFileId,
                     "type" to e.type!!.name,
                     "component" to (e.component ?: ""),
                     "details" to (e.details ?: ""),
                     "timestampMillis" to e.timestampMillis
-                ).toMutableMap()
-            }.toMutableList()
+                )
+            }
         }
 
         private fun typeInfoToJson(info: Registry.TypeInfo): MutableMap<String, Any> {
