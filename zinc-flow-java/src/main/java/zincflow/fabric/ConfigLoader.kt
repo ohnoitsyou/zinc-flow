@@ -14,7 +14,7 @@ import zincflow.fabric.ConfigOverlay.load
 import java.io.IOException
 import java.nio.file.Path
 
-/** Builds a [PipelineGraphKt] from a YAML config file.
+/** Builds a [PipelineGraph] from a YAML config file.
  * 
  * Expected shape (mirrors zinc-flow-csharp):
  * 
@@ -115,17 +115,17 @@ class ConfigLoader(
     }
 
     @Throws(IOException::class)
-    fun loadFromFile(path: Path?): PipelineGraphKt {
+    fun loadFromFile(path: Path?): PipelineGraph {
         val resolved: Resolved = load(path)
         return loadFromOverlay(resolved)
     }
 
-    fun loadFromOverlay(resolved: Resolved): PipelineGraphKt {
+    fun loadFromOverlay(resolved: Resolved): PipelineGraph {
         lastOverlay = resolved
         return load(resolved.effective)
     }
 
-    fun load(yamlSource: String?): PipelineGraphKt {
+    fun load(yamlSource: String?): PipelineGraph {
         val parsed = Yaml().load<Any?>(yamlSource)
         require(parsed is MutableMap<*, *>) { "config: top-level must be a map" }
         return load(normalizeTop(parsed))
@@ -135,7 +135,7 @@ class ConfigLoader(
         val flow = yamlParser.readValue<FlowWrapper>(path.toFile())
     }
 
-    private fun load(effective: Map<String, Any>): PipelineGraphKt {
+    private fun load(effective: Map<String, Any>): PipelineGraph {
         val flowRaw = effective["flow"]
         require(flowRaw is Map<*, *>) { "config: missing 'flow' section" }
 
@@ -218,7 +218,7 @@ class ConfigLoader(
 //            Collections.unmodifiableMap<kotlin.String?, Processor?>(LinkedHashMap<kotlin.String?, Processor?>(processors))
         lastSources = buildSources(effective["sources"])
         lastProviders = buildProviders(effective.get("providers"))
-        return PipelineGraphKt(processors, connections, entryPoints)
+        return PipelineGraph(processors, connections, entryPoints)
     }
 
     /** Build every provider declared under `providers:`. Same

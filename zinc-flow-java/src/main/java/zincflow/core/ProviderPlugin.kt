@@ -46,5 +46,5 @@ interface ProviderPlugin {
      * when the provider should be skipped (e.g. a conditional provider
      * whose enabling config key is absent). Return a non-null
      * [Provider] to have it added to the context and enabled. */
-    fun create(config: MutableMap<String, Any>): Provider?
+    fun create(config: Map<String, Any>): Provider?
 }

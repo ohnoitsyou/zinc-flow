@@ -45,5 +45,5 @@ interface ProcessorPlugin {
         return listOf(Relationships.SUCCESS, Relationships.FAILURE)
     }
 
-    fun create(config: MutableMap<String, String>, context: ProcessorContext): Processor?
+    fun create(config: Map<String, String>, context: ProcessorContext): Processor?
 }

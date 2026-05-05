@@ -143,7 +143,7 @@ class ProvenanceProvider @JvmOverloads constructor(val capacity: Int = DEFAULT_C
             return listOf("buffer")
         }
 
-        override fun create(config: MutableMap<String, Any>): Provider {
+        override fun create(config: Map<String, Any>): Provider {
             val buf = config["buffer"]
             return ProvenanceProvider(buf as? Int ?: DEFAULT_CAPACITY)
         }

@@ -24,35 +24,33 @@ import java.util.StringJoiner
  * its config. */
 class ConvertRecordToAvro : Processor {
     override fun process(ff: FlowFile): ProcessorResult {
+        val content = ff.content
         if (ff.content !is RecordContent) {
-            return ProcessorResult.failure(
+            return ProcessorResult.Failure(
                 "ConvertRecordToAvro: expected RecordContent, got " + ff.content.javaClass.getSimpleName(), ff
             )
         }
-        if (rc.records.isEmpty()) {
-            return ProcessorResult.single(ff)
+        if (content.records.isEmpty()) {
+            return ProcessorResult.Single(ff)
         }
-        val schema: Schema? = rc.schema
-        if (schema == null) {
-            return ProcessorResult.failure(
-                "ConvertRecordToAvro: RecordContent has no schema — upstream must declare one", ff
-            )
-        }
+        val schema: Schema = content.schema ?: return ProcessorResult.Failure(
+            "ConvertRecordToAvro: RecordContent has no schema — upstream must declare one", ff
+        )
 
         val writer = GenericDatumWriter<GenericRecord?>(schema)
         val buf = ByteArrayOutputStream()
         val encoder = EncoderFactory.get().binaryEncoder(buf, null)
         try {
-            for (record in rc.records) {
+            for (record in content.records) {
                 writer.write(AvroConversion.toGenericRecord(record, schema), encoder)
             }
             encoder.flush()
-            return ProcessorResult.single(
+            return ProcessorResult.Single(
                 ff.withContent(RawContent(buf.toByteArray()))
                     .withAttribute("avro.schema", compactFieldDefs(schema))
             )
         } catch (ex: IOException) {
-            return ProcessorResult.failure("ConvertRecordToAvro: encode failed — " + ex.message, ff)
+            return ProcessorResult.Failure("ConvertRecordToAvro: encode failed — " + ex.message, ff)
         }
     }
 
@@ -60,21 +58,21 @@ class ConvertRecordToAvro : Processor {
         /** Serialize a Schema as the compact `"name:type,name:type"`
          * form so downstream processors can re-parse it with
          * [SchemaDefs.parse]. */
-        private fun compactFieldDefs(schema: Schema): String? {
+        private fun compactFieldDefs(schema: Schema): String {
             val sj = StringJoiner(",")
-            for (f in schema.getFields()) {
-                val t = if (f.schema().getType() == Schema.Type.UNION)
+            for (f in schema.fields) {
+                val t = if (f.schema().type == Schema.Type.UNION)
                     firstNonNullBranch(f.schema())
                 else
-                    f.schema().getType()
+                    f.schema().type
                 sj.add(f.name() + ":" + t.getName())
             }
             return sj.toString()
         }
 
         private fun firstNonNullBranch(union: Schema): Schema.Type {
-            for (branch in union.getTypes()) {
-                if (branch.getType() != Schema.Type.NULL) return branch.getType()
+            for (branch in union.types) {
+                if (branch.type != Schema.Type.NULL) return branch.type
             }
             return Schema.Type.NULL
         }

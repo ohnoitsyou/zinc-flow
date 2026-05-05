@@ -8,17 +8,10 @@ import zincflow.core.ProviderPlugin
 import zincflow.core.SourcePlugin
 import java.io.IOException
 import java.net.MalformedURLException
-import java.net.URL
 import java.net.URLClassLoader
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Collections
-import java.util.List
-import java.util.Map
 import java.util.ServiceLoader
-import java.util.function.Consumer
-import java.util.function.Function
-import java.util.function.Predicate
 
 /** Discovers [ProcessorPlugin] and [ProviderPlugin]
  * services on a given [ClassLoader] and wires them into a
@@ -48,61 +41,61 @@ object PluginLoader {
      * Providers first (processors may require them at create-time),
      * then processors, then sources (sources are independent but their
      * factories may look up providers via the context at start-time). */
+    @JvmStatic
     @JvmOverloads
     fun load(
-        cl: ClassLoader?, registry: Registry, context: ProcessorContext,
+        cl: ClassLoader, registry: Registry, context: ProcessorContext,
         sourceRegistry: SourceRegistry? = null
     ): Summary {
         val providers = loadProvidersLegacy(cl, context)
         val processors = loadProcessors(cl, registry)
-        val sources = if (sourceRegistry == null) List.of<String?>() else loadSources(cl, sourceRegistry)
-        return Summary(processors, providers, sources, null, List.of<Path?>(), null)
+        val sources = if (sourceRegistry == null) listOf() else loadSources(cl, sourceRegistry)
+        return Summary(processors, providers, sources, null, listOf(), null)
     }
 
     /** Scan `dir` for `*.jar` files, stitch them into a
      * [URLClassLoader] layered on top of the current classloader,
      * and register every plugin service they expose. Missing or empty
      * directories are not an error — they yield an empty summary. */
+    @JvmStatic
     @JvmOverloads
     fun loadFromDirectory(
         dir: Path?, registry: Registry, context: ProcessorContext,
         sourceRegistry: SourceRegistry? = null
     ): Summary {
         if (dir == null || !Files.isDirectory(dir)) {
-            return Summary(List.of<String?>(), List.of<String?>(), List.of<String?>(), dir, List.of<Path?>(), null)
+            return Summary(listOf(), listOf(), listOf(), dir, listOf(), null)
         }
-        val jars: MutableList<Path?> = ArrayList<Path?>()
-        try {
+        val jars = try {
             Files.list(dir).use { entries ->
-                entries.filter(Predicate { p: Path? -> p!!.getFileName().toString().endsWith(".jar") })
+                entries
+                    .filter { it.fileName.toString().endsWith(".jar") }
                     .sorted()
-                    .forEach(Consumer { e: Path? -> jars.add(e) })
-            }
+            }.toList()
         } catch (ex: IOException) {
             log.warn("plugin directory scan failed: {} — {}", dir, ex.toString())
-            return Summary(List.of<String?>(), List.of<String?>(), List.of<String?>(), dir, List.of<Path?>(), null)
+            return Summary(listOf(), listOf(), listOf(), dir, listOf(), null)
         }
         if (jars.isEmpty()) {
-            return Summary(List.of<String?>(), List.of<String?>(), List.of<String?>(), dir, List.of<Path?>(), null)
+            return Summary(listOf(), listOf(), listOf(), dir, listOf(), null)
         }
-        val urls = arrayOfNulls<URL>(jars.size())
-        for (i in jars.indices) {
+        val urls = jars.mapNotNull { jar ->
             try {
-                urls[i] = jars.get(i)!!.toUri().toURL()
+                jar.toUri().toURL()
             } catch (ex: MalformedURLException) {
                 // toUri().toURL() on an absolute path doesn't realistically fail,
                 // but if it does the plugin is unusable — skip with a warning.
-                log.warn("plugin jar has unusable URL: {} — {}", jars.get(i), ex.toString())
-                urls[i] = null
+                log.warn("plugin jar has unusable URL: $jar — $ex")
+                null
             }
         }
-        val cl = URLClassLoader(stripNulls(urls), PluginLoader::class.java.getClassLoader())
+        val cl = URLClassLoader(urls.toTypedArray(), PluginLoader::class.java.classLoader)
         val providers = loadProvidersLegacy(cl, context)
         val processors = loadProcessors(cl, registry)
-        val sources = if (sourceRegistry == null) List.of<String?>() else loadSources(cl, sourceRegistry)
+        val sources = if (sourceRegistry == null) listOf() else loadSources(cl, sourceRegistry)
         log.info(
             "loaded {} plugin(s) from {} — providers: {}, processors: {}, sources: {}",
-            providers.size() + processors.size() + sources.size(), dir, providers, processors, sources
+            providers.size + processors.size + sources.size, dir, providers, processors, sources
         )
         return Summary(processors, providers, sources, dir, jars, cl)
     }
@@ -113,46 +106,32 @@ object PluginLoader {
      * `type: LoggingProvider@1.0.0` to a factory the same way
      * processors and sources do. */
     @JvmStatic
-    fun loadProviders(cl: ClassLoader?, registry: ProviderRegistry): MutableList<String?> {
-        val types: MutableList<String?> = ArrayList<String?>()
-        for (plugin in ServiceLoader.load<ProviderPlugin>(ProviderPlugin::class.java, cl)) {
+    fun loadProviders(cl: ClassLoader, registry: ProviderRegistry): List<String> {
+        val types = mutableListOf<String>()
+        for (plugin in ServiceLoader.load(ProviderPlugin::class.java, cl)) {
             val type = plugin.providerType()
-            if (type == null || type.isEmpty()) {
-                log.warn("ProviderPlugin {} reported blank providerType() — skipping", plugin.getClass().getName())
+            if (type.isEmpty()) {
+                log.warn("ProviderPlugin {} reported blank providerType() — skipping", plugin.javaClass.name)
                 continue
             }
-            val version = if (plugin.version() == null || plugin.version().isEmpty())
-                TypeRefs.DEFAULT_VERSION
-            else
-                plugin.version()
-            val info = ProviderRegistry.TypeInfo(
-                type, version,
-                if (plugin.description() == null) "" else plugin.description(),
-                if (plugin.configKeys() == null) List.of<String?>() else plugin.configKeys()
-            )
-            registry.register(
-                info,
-                ProviderRegistry.Factory { config: MutableMap<String?, Any?>? -> plugin.create(config) })
-            types.add(type + "@" + version)
-            log.info(
-                "plugin provider registered: {}@{} ({})",
-                type, version, plugin.getClass().getName()
-            )
+            val version = plugin.version().ifEmpty { TypeRefs.DEFAULT_VERSION }
+            val info = ProviderRegistry.TypeInfo(type, version, plugin.description(), plugin.configKeys())
+            registry.register(info) { config: Map<String, Any> -> plugin.create(config) }
+            types.add("$type@$version")
+            log.info("plugin provider registered: $type@$version (${plugin.javaClass.name})")
         }
-        Collections.sort<String?>(types)
-        return types
+        return types.sorted()
     }
 
     /** Legacy path — drop a plugin directly into a [ProcessorContext]
      * without going through a registry. Used when config.yaml has no
      * `providers:` block and the caller wants everything pulled
      * in with default config. */
-    private fun loadProvidersLegacy(cl: ClassLoader?, context: ProcessorContext): MutableList<String?> {
-        val names: MutableList<String?> = ArrayList<String?>()
-        for (plugin in ServiceLoader.load<ProviderPlugin>(ProviderPlugin::class.java, cl)) {
+    private fun loadProvidersLegacy(cl: ClassLoader, context: ProcessorContext): List<String> {
+        val names = mutableListOf<String>()
+        for (plugin in ServiceLoader.load(ProviderPlugin::class.java, cl)) {
             try {
-                val p = plugin.create(Map.of<String?, Any?>())
-                if (p == null) continue
+                val p = plugin.create(mapOf()) ?: continue
                 // Skip if the bootstrap already wired a provider under
                 // this name — Main instantiates a default set before
                 // scanning plugins, and we don't want a built-in
@@ -163,47 +142,34 @@ object PluginLoader {
                 p.enable()
                 names.add(p.name())
             } catch (ex: RuntimeException) {
-                log.warn("ProviderPlugin {} threw on create: {}", plugin.getClass().getName(), ex.toString())
+                log.warn("ProviderPlugin ${plugin.javaClass.name} threw on create: $ex")
             }
         }
-        Collections.sort<String?>(names)
-        return names
+        return names.sorted()
     }
 
-    private fun loadProcessors(cl: ClassLoader?, registry: Registry): MutableList<String?> {
-        val types: MutableList<String?> = ArrayList<String?>()
-        for (plugin in ServiceLoader.load<ProcessorPlugin>(ProcessorPlugin::class.java, cl)) {
+    private fun loadProcessors(cl: ClassLoader, registry: Registry): List<String> {
+        val types = mutableListOf<String>()
+        for (plugin in ServiceLoader.load(ProcessorPlugin::class.java, cl)) {
             val type = plugin.type()
-            if (type == null || type.isEmpty()) {
-                log.warn("ProcessorPlugin {} reported blank type() — skipping", plugin.getClass().getName())
+            if (type.isEmpty()) {
+                log.warn("ProcessorPlugin ${plugin.javaClass.name} reported blank type() — skipping")
                 continue
             }
-            val version = if (plugin.version() == null || plugin.version().isEmpty())
-                TypeRefs.DEFAULT_VERSION
-            else
-                plugin.version()
+            val version = plugin.version().ifEmpty { TypeRefs.DEFAULT_VERSION }
             val info = Registry.TypeInfo(
                 type, version,
-                if (plugin.description() == null) "" else plugin.description(),
-                if (plugin.configKeys() == null) List.of<String?>() else plugin.configKeys(),
-                if (plugin.relationships() == null) List.of<String?>() else plugin.relationships()
+                plugin.description(),
+                plugin.configKeys(),
+                plugin.relationships()
             )
-            registry.register(
-                info,
-                Registry.Factory { config: MutableMap<String?, String>?, context: ProcessorContext? ->
-                    plugin.create(
-                        config,
-                        context
-                    )
-                })
-            types.add(type + "@" + version)
-            log.info(
-                "plugin processor registered: {}@{} ({})",
-                type, version, plugin.getClass().getName()
-            )
+            registry.register(info) { config: Map<String, String>, context: ProcessorContext ->
+                plugin.create(config, context)
+            }
+            types.add("$type@$version")
+            log.info("plugin processor registered: $type@$version (${plugin.javaClass.name})")
         }
-        Collections.sort<String?>(types)
-        return types
+        return types.sorted()
     }
 
     /** Scan `cl` for [SourcePlugin] services and register
@@ -212,61 +178,40 @@ object PluginLoader {
      * main jar) populate the registry through the same path as
      * plugin-jar sources. */
     @JvmStatic
-    fun loadSources(cl: ClassLoader?, registry: SourceRegistry): MutableList<String?> {
-        val types: MutableList<String?> = ArrayList<String?>()
-        for (plugin in ServiceLoader.load<SourcePlugin>(SourcePlugin::class.java, cl)) {
+    fun loadSources(cl: ClassLoader, registry: SourceRegistry): List<String> {
+        val types = mutableListOf<String>()
+        for (plugin in ServiceLoader.load(SourcePlugin::class.java, cl)) {
             val type = plugin.sourceType()
-            if (type == null || type.isEmpty()) {
-                log.warn("SourcePlugin {} reported blank sourceType() — skipping", plugin.getClass().getName())
+            if (type.isEmpty()) {
+                log.warn("SourcePlugin '${plugin.javaClass.name} reported blank sourceType() — skipping")
                 continue
             }
-            val version = if (plugin.version() == null || plugin.version().isEmpty())
-                TypeRefs.DEFAULT_VERSION
-            else
-                plugin.version()
+            val version = plugin.version().ifEmpty { TypeRefs.DEFAULT_VERSION }
             val info = SourceRegistry.TypeInfo(
                 type, version,
-                if (plugin.description() == null) "" else plugin.description(),
-                if (plugin.configKeys() == null) List.of<String?>() else plugin.configKeys()
+                plugin.description(),
+                plugin.configKeys()
             )
-            registry.register(
-                info,
-                SourceRegistry.Factory { name: String?, config: MutableMap<String?, Any?>? ->
-                    plugin.create(
-                        name,
-                        config
-                    )
-                })
-            types.add(type + "@" + version)
-            log.info(
-                "plugin source registered: {}@{} ({})",
-                type, version, plugin.getClass().getName()
-            )
+            registry.register(info) { name: String, config: Map<String, Any> ->
+                plugin.create(name, config)
+            }
+            types.add("$type@$version")
+            log.info("plugin source registered: $type@$version (${plugin.javaClass.name})")
         }
-        Collections.sort<String?>(types)
-        return types
-    }
-
-    private fun stripNulls(`in`: Array<URL?>): Array<URL?> {
-        var keep = 0
-        for (u in `in`) if (u != null) keep++
-        val out = arrayOfNulls<URL>(keep)
-        var j = 0
-        for (u in `in`) if (u != null) out[j++] = u
-        return out
+        return types.sorted()
     }
 
     /** Convenience — expose a summary as a JSON-friendly map for the
      * management API. Avoids Jackson having to reflect over the record. */
-    fun toJson(s: Summary): MutableMap<String?, Any?> {
-        val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        out.put("directory", if (s.directory == null) null else s.directory.toString())
-        out.put("jars", s.jars!!.stream().map<String?>(Function { obj: Path? -> obj.toString() }).toList())
-        out.put("processorTypes", s.processorTypes)
-        out.put("providerNames", s.providerNames)
-        out.put("sourceTypes", s.sourceTypes)
-        out.put("totalLoaded", s.totalLoaded())
-        return out
+    fun toJson(s: Summary): Map<String, Any?> {
+        return buildMap {
+            put("directory", s.directory?.toString())
+            put("jars", s.jars?.stream()?.map { obj: Path? -> obj.toString() })
+            put("processorTypes", s.processorTypes)
+            put("providerNames", s.providerNames)
+            put("sourceTypes", s.sourceTypes)
+            put("totalLoaded", s.totalLoaded())
+        }
     }
 
     /** `classLoader` is the [URLClassLoader] spawned for the
@@ -275,15 +220,15 @@ object PluginLoader {
      * `POST /api/plugins/reload`. Null when no classloader was
      * created (empty directory, classpath-only scan). */
     class Summary(
-        processorTypes: MutableList<String?>?,
-        providerNames: MutableList<String?>?,
-        sourceTypes: MutableList<String?>?,
+        val processorTypes: List<String>,
+        val providerNames: List<String>,
+        val sourceTypes: List<String>,
         val directory: Path?,
-        jars: MutableList<Path?>?,
+        val jars: List<Path>?,
         val classLoader: URLClassLoader?
     ) : AutoCloseable {
         fun totalLoaded(): Int {
-            return processorTypes.size() + providerNames.size() + sourceTypes.size()
+            return processorTypes.size + providerNames.size + sourceTypes.size
         }
 
         /** Release the [URLClassLoader] — best effort. Safe to call
@@ -297,29 +242,26 @@ object PluginLoader {
             }
         }
 
-        val processorTypes: MutableList<String?>?
-        val providerNames: MutableList<String?>?
-        val sourceTypes: MutableList<String?>?
-        val jars: MutableList<Path?>?
-
-        init {
-            var processorTypes = processorTypes
-            var providerNames = providerNames
-            var sourceTypes = sourceTypes
-            var jars = jars
-            processorTypes = List.copyOf<String?>(processorTypes)
-            providerNames = List.copyOf<String?>(providerNames)
-            sourceTypes = List.copyOf<String?>(sourceTypes)
-            jars = List.copyOf<Path?>(jars)
-            this.processorTypes = processorTypes
-            this.providerNames = providerNames
-            this.sourceTypes = sourceTypes
-            this.jars = jars
-        }
-
         companion object {
+            operator fun invoke(
+                processorTypes: List<String>,
+                providerNames: List<String>,
+                sourceTypes: List<String>,
+                directory: Path?,
+                jars: List<Path>,
+                classLoader: URLClassLoader?
+            ): Summary {
+                return Summary(
+                    processorTypes.toList(),
+                    providerNames.toList(),
+                    sourceTypes.toList(),
+                    directory,
+                    jars.toList(),
+                    classLoader
+                )
+            }
             fun empty(): Summary {
-                return Summary(List.of<String?>(), List.of<String?>(), List.of<String?>(), null, List.of<Path?>(), null)
+                return Summary(emptyList(), emptyList(), emptyList(), null, emptyList(), null)
             }
         }
     }

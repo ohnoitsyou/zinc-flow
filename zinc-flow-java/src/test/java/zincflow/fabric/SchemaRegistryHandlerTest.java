@@ -35,7 +35,7 @@ final class SchemaRegistryHandlerTest {
         registry = new SchemaRegistryProvider();
         registry.enable();
         context.addProvider(registry);
-        var pipeline = new Pipeline(PipelineGraphKt.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
+        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
         server = new HttpServer(pipeline).start(0);
     }
 
@@ -215,7 +215,7 @@ final class SchemaRegistryHandlerTest {
         // Boot a separate server with no schema_registry in context.
         server.stop();
         var context = new ProcessorContext();
-        var pipeline = new Pipeline(PipelineGraphKt.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
+        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
         server = new HttpServer(pipeline).start(0);
         var resp = get("/api/schema-registry/subjects");
         assertEquals(404, resp.statusCode(),

@@ -15,14 +15,14 @@ import org.apache.avro.Schema
  * the field is absent. */
 @ConsistentCopyVisibility
 data class RecordContent private constructor(
-    val records: List<Map<String, Any?>>,
+    val records: List<Map<String, Any>>,
     val schema: Schema? = null
 ) : Content {
     companion object {
-        operator fun invoke(records: List<Map<String, Any?>>, schema: Schema? = null): RecordContent {
+        operator fun invoke(records: List<Map<String, Any>>, schema: Schema? = null): RecordContent {
             return RecordContent(records.toList(), schema)
         }
-        operator fun invoke(records: MutableList<MutableMap<String, Any?>>, schema: Schema? = null): RecordContent {
+        operator fun invoke(records: MutableList<MutableMap<String, Any>>, schema: Schema? = null): RecordContent {
             return RecordContent(records.toList(), schema)
         }
     }

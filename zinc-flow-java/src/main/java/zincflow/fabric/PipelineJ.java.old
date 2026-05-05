@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 ///
 /// Matches the zinc-flow-csharp model — see
 /// {@code zinc-flow-csharp/ZincFlow/Fabric/Fabric.cs}.
-public final class Pipeline {
+public final class PipelineJ {
 
     private static final Logger log = LoggerFactory.getLogger(Pipeline.class);
 
@@ -37,7 +37,7 @@ public final class Pipeline {
     /// forever. Matches the C# default.
     public static final int DEFAULT_MAX_HOPS = 50;
 
-    private volatile PipelineGraphKt graph;
+    private volatile PipelineGraph graph;
     private final Stats stats;
     private final int maxHops;
     private final ProcessorContext context;
@@ -56,19 +56,19 @@ public final class Pipeline {
     private final ConcurrentHashMap<String, ProcessorDef> processorDefs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Source> sources = new ConcurrentHashMap<>();
 
-    public Pipeline(PipelineGraphKt graph) {
+    public PipelineJ(PipelineGraph graph) {
         this(graph, DEFAULT_MAX_HOPS, null, null, null);
     }
 
-    public Pipeline(PipelineGraphKt graph, int maxHops) {
+    public PipelineJ(PipelineGraph graph, int maxHops) {
         this(graph, maxHops, null, null, null);
     }
 
-    public Pipeline(PipelineGraphKt graph, int maxHops, Metrics metrics) {
+    public PipelineJ(PipelineGraph graph, int maxHops, Metrics metrics) {
         this(graph, maxHops, metrics, null, null);
     }
 
-    public Pipeline(PipelineGraphKt graph, int maxHops, Metrics metrics,
+    public PipelineJ(PipelineGraph graph, int maxHops, Metrics metrics,
                     ProcessorContext context, Registry registry) {
         this.graph = Objects.requireNonNull(graph);
         this.maxHops = maxHops;
@@ -420,8 +420,8 @@ public final class Pipeline {
     /// type or a different processor-def recorded; connection changes
     /// are tracked per-source. Results inform {@code /api/reload}'s
     /// response so operators can see what actually changed.
-    public ReloadDiff applyReload(PipelineGraphKt next) {
-        PipelineGraphKt before = this.graph;
+    public ReloadDiff applyReload(PipelineGraph next) {
+        PipelineGraph before = this.graph;
         int added = 0, removed = 0, updated = 0, connectionsChanged = 0;
 
         for (String name : before.processors().keySet()) {
@@ -456,7 +456,7 @@ public final class Pipeline {
         return stats;
     }
 
-    public PipelineGraphKt graph() {
+    public PipelineGraph graph() {
         return graph;
     }
 

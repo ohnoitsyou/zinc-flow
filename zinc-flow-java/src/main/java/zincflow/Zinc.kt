@@ -13,8 +13,7 @@ import zincflow.fabric.HttpServer
 import zincflow.fabric.Metrics
 import zincflow.fabric.NodeIdentity
 import zincflow.fabric.Pipeline
-import zincflow.fabric.PipelineGraphKt
-import zincflow.fabric.PipelineGraphKtt
+import zincflow.fabric.PipelineGraph
 import zincflow.fabric.PluginLoader
 import zincflow.fabric.ProviderRegistry
 import zincflow.fabric.Registry
@@ -117,7 +116,7 @@ object Zinc {
         }
 
         val loader = ConfigLoader(registry, context, sourceRegistry, providerRegistry)
-        val graph: PipelineGraphKt?
+        val graph: PipelineGraph?
         if (configPath != null && Files.isRegularFile(configPath)) {
             log.info("loading pipeline from {}", configPath.toAbsolutePath())
             graph = loader.loadFromFile(configPath)
@@ -313,7 +312,7 @@ object Zinc {
 
     /** Built-in demo pipeline used when no config.yaml is provided.
      * Mirrors the Phase 2 hard-coded graph. */
-    fun demoGraph(): PipelineGraphKt {
+    fun demoGraph(): PipelineGraph {
         val ingress: Processor = LogAttribute("[ingress] ")
         val router: Processor = RouteOnAttribute("high: priority == urgent; low: priority == normal")
         val elevate: Processor = UpdateAttribute("priority", "elevated")
@@ -334,7 +333,7 @@ object Zinc {
             ),
             "elevate" to mutableMapOf(Relationships.SUCCESS to mutableListOf("tail"))
         )
-        return PipelineGraphKt(processors, connections, mutableListOf<String?>("ingress"))
+        return PipelineGraph(processors, connections, listOf("ingress"))
     }
 
     /** Static validation without starting the worker. Exit codes match
@@ -355,7 +354,7 @@ object Zinc {
         PluginLoader.loadProviders(Zinc::class.java.classLoader, providers)
         val loader = ConfigLoader(registry, ProcessorContext(), sources, providers)
 
-        val graph: PipelineGraphKt?
+        val graph: PipelineGraph?
         try {
             graph = loader.loadFromFile(path)
         } catch (ex: Exception) {
@@ -367,15 +366,15 @@ object Zinc {
             FlowValidator.validate(graph.processors.keys, graph.connections)
 
         println("validate: $path")
-        if (result.errors?.isEmpty() == true && result.warnings?.isEmpty() == true) {
+        if (result.errors.isEmpty() && result.warnings.isEmpty()) {
             println("  no issues — config is valid")
             return 0
         }
-        result.errors?.forEach { println("  [error]   $it") }
-        result.warnings?.forEach { println("  [warning]   $it") }
+        result.errors.forEach { println("  [error]   $it") }
+        result.warnings.forEach { println("  [warning]   $it") }
         println()
-        println("summary: ${result.errors?.size} error(s), ${result.warnings?.size} warning(s)")
-        return if (result.errors?.isEmpty() == true ) 0 else 1
+        println("summary: ${result.errors.size} error(s), ${result.warnings.size} warning(s)")
+        return if (result.errors.isEmpty()) 0 else 1
     }
 
     /** Throughput benchmark — two-hop UpdateAttribute pipeline, no HTTP,
@@ -407,7 +406,7 @@ object Zinc {
         val conns = mutableMapOf(
             "tag" to mutableMapOf(Relationships.SUCCESS to mutableListOf("sink"))
         )
-        val graph = PipelineGraphKt(procs, conns, mutableListOf<String?>("tag"))
+        val graph = PipelineGraph(procs, conns, listOf("tag"))
         val pipeline = Pipeline(graph)
 
         val payload = "bench payload data here".toByteArray(StandardCharsets.UTF_8)

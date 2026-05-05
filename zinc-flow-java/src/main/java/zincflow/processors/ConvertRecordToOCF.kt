@@ -23,28 +23,22 @@ import java.io.IOException
  * `deflate`, `snappy`, `bzip2`, `xz`,
  * `zstandard`. Passed through to
  * [CodecFactory.fromString]. */
-class ConvertRecordToOCF @JvmOverloads constructor(codecName: String? = "null") : Processor {
-    private val codec: CodecFactory?
-
-    init {
-        this.codec = CodecFactory.fromString(if (codecName == null || codecName.isEmpty()) "null" else codecName)
-    }
+class ConvertRecordToOCF(codecName: String?) : Processor {
+    private val codec = CodecFactory.fromString(if (codecName.isNullOrEmpty()) "null" else codecName)
 
     override fun process(ff: FlowFile): ProcessorResult {
-        if (ff.content !is RecordContent) {
-            return ProcessorResult.failure(
-                "ConvertRecordToOCF: expected RecordContent, got " + ff.content.javaClass.getSimpleName(), ff
+        val content = ff.content
+        if (content !is RecordContent) {
+            return ProcessorResult.Failure(
+                "ConvertRecordToOCF: expected RecordContent, got " + content.javaClass.getSimpleName(), ff
             )
         }
-        if (rc.records.isEmpty()) {
-            return ProcessorResult.single(ff)
+        if (content.records.isEmpty()) {
+            return ProcessorResult.Single(ff)
         }
-        val schema: Schema? = rc.schema
-        if (schema == null) {
-            return ProcessorResult.failure(
-                "ConvertRecordToOCF: RecordContent has no schema — upstream must declare one", ff
-            )
-        }
+        val schema: Schema = content.schema ?: return ProcessorResult.Failure(
+            "ConvertRecordToOCF: RecordContent has no schema — upstream must declare one", ff
+        )
 
         val datum = GenericDatumWriter<GenericRecord?>(schema)
         val buf = ByteArrayOutputStream()
@@ -52,14 +46,14 @@ class ConvertRecordToOCF @JvmOverloads constructor(codecName: String? = "null") 
             DataFileWriter<GenericRecord?>(datum).use { writer ->
                 writer.setCodec(codec)
                 writer.create(schema, buf)
-                for (record in rc.records) {
+                for (record in content.records) {
                     writer.append(AvroConversion.toGenericRecord(record, schema))
                 }
                 writer.flush()
-                return ProcessorResult.single(ff.withContent(RawContent(buf.toByteArray())))
+                return ProcessorResult.Single(ff.withContent(RawContent(buf.toByteArray())))
             }
         } catch (ex: IOException) {
-            return ProcessorResult.failure("ConvertRecordToOCF: write failed — " + ex.message, ff)
+            return ProcessorResult.Failure("ConvertRecordToOCF: write failed — $ex", ff)
         }
     }
 }

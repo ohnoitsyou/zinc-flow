@@ -10,7 +10,6 @@ import zincflow.core.RawContent
 import zincflow.core.RecordContent
 import zincflow.core.SchemaDefs
 import java.nio.charset.StandardCharsets
-import java.util.List
 import java.util.StringJoiner
 
 /** Parses the FlowFile's RawContent payload as JSON and upgrades it to
@@ -32,30 +31,29 @@ class ConvertJSONToRecord @JvmOverloads constructor(schemaName: String? = "") : 
     }
 
     override fun process(ff: FlowFile): ProcessorResult {
-        if (ff.content !is RawContent) {
-            return ProcessorResult.failure(
-                "ConvertJSONToRecord: expected RawContent, got " + ff.content.javaClass.getSimpleName(), ff
+        val content = ff.content
+        if (content !is RawContent) {
+            return ProcessorResult.Failure(
+                "ConvertJSONToRecord: expected RawContent, got " + content.javaClass.getSimpleName(), ff
             )
         }
-        val text = String(raw.bytes, StandardCharsets.UTF_8).trim { it <= ' ' }
+        val text = String(content.bytes, StandardCharsets.UTF_8).trim { it <= ' ' }
         if (text.isEmpty()) {
-            return ProcessorResult.failure("ConvertJSONToRecord: empty payload", ff)
+            return ProcessorResult.Failure("ConvertJSONToRecord: empty payload", ff)
         }
         try {
-            val records: MutableList<MutableMap<String?, Any?>>
-            if (text.startsWith("[")) {
-                records = MAPPER.readValue<MutableList<MutableMap<String?, Any?>>>(text, ARR_TYPE)
+            val records = if (text.startsWith("[")) {
+                MAPPER.readValue(text, ARR_TYPE)
             } else {
-                records =
-                    List.of<MutableMap<String?, Any?>?>(MAPPER.readValue<MutableMap<String?, Any?>?>(text, OBJ_TYPE))
+                listOf<MutableMap<String, Any>>(MAPPER.readValue(text, OBJ_TYPE))
             }
             val schema = inferSchema(records)
-            return ProcessorResult.single(
+            return ProcessorResult.Single(
                 ff.withContent(RecordContent(records, schema))
                     .withAttribute("record.count", records.size.toString())
             )
         } catch (ex: Exception) {
-            return ProcessorResult.failure("ConvertJSONToRecord: parse failed — " + ex.message, ff)
+            return ProcessorResult.Failure("ConvertJSONToRecord: parse failed — " + ex.message, ff)
         }
     }
 
@@ -64,22 +62,20 @@ class ConvertJSONToRecord @JvmOverloads constructor(schemaName: String? = "") : 
      * detected directly; everything else (nested objects, arrays) falls
      * back to string — not strictly correct but keeps JSON→Record
      * usable as input to Avro writers for the common flat-object case. */
-    private fun inferSchema(records: MutableList<MutableMap<String?, Any?>>): Schema? {
+    private fun inferSchema(records: List<MutableMap<String, Any>>): Schema? {
         if (records.isEmpty()) return null
-        val first: MutableMap<String?, Any?> = records.getFirst()
-        val defs = StringJoiner(",")
-        for (entry in first.entries) {
-            defs.add(entry.key + ":" + inferType(entry.value))
+        val definition = records.first().entries.joinToString { (key, value) ->
+            "$key:${inferType(value)}"
         }
-        return SchemaDefs.parse(schemaName, defs.toString())
+        return SchemaDefs.parse(schemaName, definition)
     }
 
     companion object {
         private val MAPPER = ObjectMapper()
-        private val OBJ_TYPE: TypeReference<MutableMap<String?, Any?>?> =
-            object : TypeReference<MutableMap<String?, Any?>?>() {}
-        private val ARR_TYPE: TypeReference<MutableList<MutableMap<String?, Any?>?>?> =
-            object : TypeReference<MutableList<MutableMap<String?, Any?>?>?>() {}
+        private val OBJ_TYPE: TypeReference<MutableMap<String, Any>> =
+            object : TypeReference<MutableMap<String, Any>>() {}
+        private val ARR_TYPE: TypeReference<MutableList<MutableMap<String, Any>>> =
+            object : TypeReference<MutableList<MutableMap<String, Any>>>() {}
 
         private fun inferType(v: Any?): String {
             if (v == null) return "string"

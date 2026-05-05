@@ -20,7 +20,7 @@ final class GraphMutationTest {
     }
 
     private static Pipeline threeNodePipeline() {
-        var graph = new PipelineGraphKt(
+        var graph = new PipelineGraph(
                 Map.of("a", passThrough(), "b", passThrough(), "c", passThrough()),
                 Map.of("a", Map.of("success", List.of("b"))),
                 List.of("a"));
@@ -120,7 +120,7 @@ final class GraphMutationTest {
         Processor ingress = ff -> ProcessorResult.single(ff);
         Processor side = ff -> { hits.incrementAndGet(); return ProcessorResult.dropped(); };
 
-        var graph = new PipelineGraphKt(
+        var graph = new PipelineGraph(
                 Map.of("ingress", ingress, "side", side),
                 Map.of(),
                 List.of("ingress"));

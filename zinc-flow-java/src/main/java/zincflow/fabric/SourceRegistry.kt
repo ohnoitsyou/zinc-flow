@@ -1,12 +1,8 @@
 package zincflow.fabric
 
 import zincflow.core.Source
-import java.util.List
-import java.util.Map
 import java.util.concurrent.ConcurrentHashMap
-import java.util.function.BiFunction
 import kotlin.collections.listOf
-import kotlin.collections.sortWith
 
 /** Registry of source factories keyed by `name@version`. Mirror
  * of [Registry] for [Source] plugins. Config resolves
@@ -15,14 +11,14 @@ import kotlin.collections.sortWith
  * latest registered version. */
 class SourceRegistry {
     fun interface Factory {
-        fun create(name: String, config: MutableMap<String, Any>): Source
+        fun create(name: String, config: Map<String, Any>): Source?
     }
 
     class TypeInfo(
         val name: String,
         val version: String,
         val description: String = "",
-        val configKeys: MutableList<String> = mutableListOf()
+        val configKeys: List<String> = listOf()
     ) {
         fun qualifiedName(): String {
             return TypeRefs.qualify(name, version)

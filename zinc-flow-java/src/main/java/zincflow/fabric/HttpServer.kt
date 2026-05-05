@@ -16,6 +16,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import zincflow.core.FlowFile
 import zincflow.fabric.Pipeline.EditResult
+import zincflow.fabric.PluginLoader.loadFromDirectory
 import zincflow.providers.ProvenanceProvider
 import zincflow.providers.ProvenanceProvider.EventType
 import zincflow.providers.SchemaRegistryProvider
@@ -52,8 +53,11 @@ import kotlin.math.max
  * 
  * Javalin 6 with Jetty 12 underneath — non-DI, minimal surface. */
 class HttpServer @JvmOverloads constructor(
-    private val pipeline: Pipeline, private val loader: ConfigLoader? = null, private val configPath: Path? = null,
-    private val plugins: PluginLoader.Summary? = null, private val pluginsDir: Path? = null,
+    private val pipeline: Pipeline,
+    private val loader: ConfigLoader? = null,
+    private val configPath: Path? = null,
+    private var plugins: PluginLoader.Summary? = null,
+    private val pluginsDir: Path? = null,
     private val identity: NodeIdentity? = null,
     private val json: ObjectMapper = ObjectMapper()
 ) {
@@ -86,8 +90,8 @@ class HttpServer @JvmOverloads constructor(
             .get("/") { handleDashboard(it) }
             .post("/") { handleIngest(it) }
             .get("/dashboard") { handleDashboard(it) }
-            .get("/health", { handleHealth(it) })
-            .get("/metrics", { handleMetrics(it) })
+            .get("/health") { handleHealth(it) }
+            .get("/metrics") { handleMetrics(it) }
             .get("/api/stats") { handleStats(it) }
             .get("/api/processors") { handleProcessors(it) }
             .get("/api/processor-stats") { handleProcessorStats(it) }
@@ -328,7 +332,7 @@ class HttpServer @JvmOverloads constructor(
         val perProcStats = pipeline.processorStats()
         for (entry in graph.processors.entries) {
             val name = entry.key
-            val info = buildMap<String, Any> {
+            val info = buildMap {
                 put("name", name)
                 put(ConfigLoader.TYPE_KEY, pipeline.processorType(name))
                 put("state", pipeline.processorState(name).name)
@@ -385,7 +389,7 @@ class HttpServer @JvmOverloads constructor(
     @Throws(Exception::class)
     private fun handleRegistry(ctx: Context) {
         val r = pipeline.registry()
-        val out = mutableListOf<MutableMap<String, Any>>()
+        val out = mutableListOf<Map<String, Any>>()
         if (r != null) {
             // Emit the latest version of each type, matching the C# worker's
             // shape so the shared React UI consumes both uniformly.
@@ -546,11 +550,11 @@ class HttpServer @JvmOverloads constructor(
         val id: Long
         try {
             id = ctx.pathParam("id").toLong()
-        } catch (e: NumberFormatException) {
+        } catch (_: NumberFormatException) {
             writeError(ctx, 400, "path param 'id' is not a long")
             return
         }
-        ctx.contentType("application/json").result(json.writeValueAsBytes(Companion.shape(prov.getEvents(id))))
+        ctx.contentType("application/json").result(json.writeValueAsBytes(shape(prov.getEvents(id))))
     }
 
     // --- Processor admin ---
@@ -874,6 +878,7 @@ class HttpServer @JvmOverloads constructor(
         writeEditResult(ctx, r, mapOf("status" to "updated", "name" to name))
     }
 
+    // TODO: Process using data class
     @Throws(Exception::class)
     private fun handleSetProcessorConnections(ctx: Context) {
         val name = ctx.pathParam("name")
@@ -882,19 +887,19 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 400, "invalid json body")
             return
         }
-        val rels: MutableMap<String?, MutableList<String?>?> = LinkedHashMap<String?, MutableList<String?>?>()
+        val rels = mutableMapOf<String, List<String>>()
         for (entry in body.entries) {
-            if (entry.value is MutableList<*>) {
-                val targets: MutableList<String?> = ArrayList<String?>(list.size)
-                for (o in list) targets.add(str(o))
-                rels.put(entry.key, targets)
+            if (entry.value is List<*>) {
+                val list = entry.value as List<String>
+                val targets = list.map { v -> str(v) }
+                rels[entry.key] = targets
             } else {
                 writeError(ctx, 400, "relationship '" + entry.key + "' must map to a list of target names")
                 return
             }
         }
         val r = pipeline.setConnections(name, rels)
-        writeEditResult(ctx, r, Map.of<String?, Any?>("status", "replaced", "from", name, "relationships", rels))
+        writeEditResult(ctx, r, mapOf("status" to "replaced", "from" to name, "relationships" to rels))
     }
 
     // --- Identity ---
@@ -916,7 +921,9 @@ class HttpServer @JvmOverloads constructor(
         }
         val yaml = YamlEmitter.emit(pipeline.graph(), loader.lastSpecs())
         try {
-            Files.writeString(configPath, yaml)
+            if (yaml != null) {
+                Files.writeString(configPath, yaml)
+            }
         } catch (ex: IOException) {
             writeError(ctx, 500, "flow save failed: " + ex.message)
             return
@@ -970,9 +977,9 @@ class HttpServer @JvmOverloads constructor(
     @Throws(Exception::class)
     private fun handleProcessorTypes(ctx: Context) {
         val r = pipeline.registry()
-        val out: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+        val out = mutableListOf<Map<String, Any>>()
         if (r != null) {
-            for (info in r.listAll()) {
+            for (info in r.listAll().filterNotNull()) {
                 out.add(typeInfoToJson(info))
             }
         }
@@ -989,40 +996,41 @@ class HttpServer @JvmOverloads constructor(
         val name = ctx.pathParam("name")
         val versions = r.listVersions(name)
         if (versions.isEmpty()) {
-            writeError(ctx, 404, "processor type '" + name + "' not found")
+            writeError(ctx, 404, "processor type '$name' not found")
             return
         }
-        val body: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        body.put("name", name)
-        body.put("latest", if (r.latest(name) == null) null else r.latest(name).version)
-        val vs: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+        val body = mutableMapOf<String, Any?>()
+        body["name"] = name
+        body["latest"] = if (r.latest(name) == null) null else r.latest(name)?.version
+        val vs = mutableListOf<Map<String, Any>>() // TODO: Change to .map
         for (info in versions) vs.add(typeInfoToJson(info))
-        body.put("versions", vs)
+        body["versions"] = vs
         ctx.contentType("application/json").result(json.writeValueAsBytes(body))
     }
 
     // --- Overlays ---
+    // TODO: Change to use data class
     @Throws(Exception::class)
     private fun handleOverlays(ctx: Context) {
-        val resolved = if (loader == null) null else loader.lastOverlay()
+        val resolved = loader?.lastOverlay()
         if (resolved == null) {
             writeError(ctx, 503, "overlay info unavailable — server started without a config loader")
             return
         }
-        val layers: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+        val layers = mutableListOf<MutableMap<String, Any?>>()
         for (layer in resolved.layers) {
-            val info: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-            info.put("role", layer.role)
-            info.put("path", if (layer.path == null) null else layer.path.toString())
-            info.put("present", layer.present)
-            info.put("size", layer.content.size)
+            val info = mutableMapOf<String, Any?>()
+            info["role"] = layer.role
+            info["path"] = layer.path?.toString()
+            info["present"] = layer.present
+            info["size"] = layer.content.size
             layers.add(info)
         }
-        val body: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        body.put("base", if (resolved.basePath == null) null else resolved.basePath.toString())
-        body.put("layers", layers)
-        body.put("effective", resolved.effective)
-        body.put("provenance", resolved.provenance)
+        val body = mutableMapOf<String, Any?>()
+        body["base"] = resolved.basePath?.toString()
+        body["layers"] = layers
+        body["effective"] = resolved.effective
+        body["provenance"] = resolved.provenance
         ctx.contentType("application/json").result(json.writeValueAsBytes(body))
     }
 
@@ -1034,11 +1042,11 @@ class HttpServer @JvmOverloads constructor(
      * so `/api/plugins` and `/api/identity` can answer. */
     /** Constructor for the config-driven path — enables `/api/reload`. */
     init {
-        this.plugins = if (plugins == null) PluginLoader.Summary.Companion.empty() else plugins
+        this.plugins = plugins ?: PluginLoader.Summary.empty()
     }
 
-    private fun pluginSummary(): PluginLoader.Summary? {
-        return if (currentPlugins != null) currentPlugins else plugins
+    private fun pluginSummary(): PluginLoader.Summary {
+        return (if (currentPlugins != null) currentPlugins else plugins) ?: PluginLoader.Summary.empty()
     }
 
     @Throws(Exception::class)
@@ -1067,17 +1075,17 @@ class HttpServer @JvmOverloads constructor(
         // and exhaust file handles over time.
         val prior = currentPlugins
         currentPlugins = loadFromDirectory(pluginsDir, pipeline.registry(), pipeline.context())
-        if (prior != null) prior.close()
+        prior?.close()
         log.info("reloaded plugins from {} — {} loaded", pluginsDir, currentPlugins!!.totalLoaded())
         ctx.contentType("application/json")
-            .result(json.writeValueAsBytes(PluginLoader.toJson(currentPlugins)))
+            .result(json.writeValueAsBytes(PluginLoader.toJson(currentPlugins!!)))
     }
 
     // --- Body + response helpers ---
     private fun readJsonBody(ctx: Context): MutableMap<String, Any>? {
         return try {
-            json.readValue(ctx.bodyAsBytes(), MutableMap::class.java)
-        } catch (e: Exception) {
+            json.readValue(ctx.bodyAsBytes(), MutableMap::class.java) as? MutableMap<String, Any>
+        } catch (_: Exception) {
             null
         }
     }
@@ -1103,7 +1111,7 @@ class HttpServer @JvmOverloads constructor(
     private fun writeError(ctx: Context, status: Int, message: String) {
         ctx.status(status)
             .contentType("application/json")
-            .result(json.writeValueAsBytes(Map.of<String?, String?>("error", message)))
+            .result(json.writeValueAsBytes(mapOf("error" to message)))
     }
 
     // Exposed for tests/inspection.
@@ -1146,32 +1154,32 @@ class HttpServer @JvmOverloads constructor(
             }
         }
 
-        private fun typeInfoToJson(info: Registry.TypeInfo): MutableMap<String, Any> {
+        private fun typeInfoToJson(info: Registry.TypeInfo): Map<String, Any> {
             return buildMap {
                 put("name", info.name)
                 put("version", info.version)
-                put("description", info.description)
-                put("category", info.category)
+                put("description", info.description ?: "")
+                put("category", info.category ?: "Other")
                 put("configKeys", info.configKeys)
                 put("relationships", info.relationships)
-                put("parameters", info.parameters?.filterNotNull()?.map { paramInfoToJson(it) })
-            }.filterValues { it != null }.toMutableMap() as MutableMap<String, Any>
+                put("parameters", info.parameters.map { paramInfoToJson(it) })
+            }
         }
 
-        private fun paramInfoToJson(p: ParamInfo): MutableMap<String, Any> {
+        private fun paramInfoToJson(p: ParamInfo): Map<String, Any> {
             return buildMap {
-                put("name", p.name)
-                put("label", p.label)
-                put("description", p.description)
-                put("kind", p.kind?.jsonName())
+                put("name", p.name ?: "")
+                put("label", p.label ?: "")
+                put("description", p.description ?: "")
+                put("kind", p.kind?.jsonName() ?: "")
                 put("required", p.required)
-                put("default", p.defaultValue)
-                put("placeholder", p.placeholder)
-                put("choices", p.choices)
-                put("valueKind", p.valueKind?.jsonName())
-                put("entryDelim", p.entryDelim)
-                put("pairDelim", p.pairDelim)
-            }.filterValues { it != null }.toMutableMap() as MutableMap<String, Any>
+                put("default", p.defaultValue ?: "")
+                put("placeholder", p.placeholder ?: "")
+                put("choices", p.choices ?: listOf<String>())
+                put("valueKind", p.valueKind?.jsonName() ?: "")
+                put("entryDelim", p.entryDelim ?: "")
+                put("pairDelim", p.pairDelim ?: "")
+            }
         }
 
         private fun str(o: Any?): String {

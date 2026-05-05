@@ -1,10 +1,7 @@
 package zincflow.fabric
 
 import zincflow.core.Provider
-import java.util.List
-import java.util.Map
 import java.util.concurrent.ConcurrentHashMap
-import java.util.function.BiFunction
 
 /** Registry of provider factories keyed by `name@version`.
  * Parallel to [Registry] / [SourceRegistry]. Callers
@@ -26,7 +23,7 @@ class ProviderRegistry {
         val name: String,
         val version: String,
         val description: String,
-        val configKeys: MutableList<String>
+        val configKeys: List<String>
     ) {
         fun qualifiedName(): String {
             return TypeRefs.qualify(name, version)

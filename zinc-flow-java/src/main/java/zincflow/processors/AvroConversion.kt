@@ -6,7 +6,6 @@ import org.apache.avro.generic.GenericRecord
 import org.apache.avro.util.Utf8
 import zincflow.core.RecordContent
 import java.nio.ByteBuffer
-import java.util.List
 
 /** Bidirectional helpers between Avro's [GenericRecord] and the
  * `Map<String,Object>` shape that [RecordContent]
@@ -19,16 +18,16 @@ import java.util.List
  * enum, decimal, and other logical types can land in follow-up work. */
 internal object AvroConversion {
     // --- Record ↔ Map -----------------------------------------------------
-    fun toMap(record: GenericRecord): Map<String, Any?> {
+    fun toMap(record: GenericRecord): Map<String, Any> {
         val schema = record.schema
-        return schema.fields.associate { field -> field.name() to unwrap(record.get(field.name()), field.schema()) }
+        // Sorry, need the `!!` here... Should figure out a fix later
+        return schema.fields.associate { field -> field.name() to unwrap(record.get(field.name()), field.schema())!! }
     }
 
-    fun toGenericRecord(map: MutableMap<String?, Any?>?, schema: Schema): GenericRecord? {
-        if (map == null) return null
+    fun toGenericRecord(map: Map<String, Any>, schema: Schema): GenericRecord {
         val record = GenericData.Record(schema)
-        for (f in schema.getFields()) {
-            val raw = map.get(f.name())
+        for (f in schema.fields) {
+            val raw = map[f.name()]
             record.put(f.name(), wrap(raw, f.schema()))
         }
         return record
@@ -44,14 +43,14 @@ internal object AvroConversion {
             Schema.Type.RECORD -> toMap(value as GenericRecord)
             Schema.Type.ARRAY -> {
                 val src = value as MutableList<Any?>
-                val out: MutableList<Any?> = ArrayList<Any?>(src.size)
+                val out: MutableList<Any?> = ArrayList(src.size)
                 for (item in src) out.add(unwrap(item, effective.getElementType()))
                 out
             }
 
             Schema.Type.MAP -> {
                 val src = value as MutableMap<CharSequence?, Any?>
-                val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
+                val out: MutableMap<String?, Any?> = LinkedHashMap()
                 for (entry in src.entries) {
                     out.put(entry.key.toString(), unwrap(entry.value, effective.getValueType()))
                 }
@@ -69,21 +68,19 @@ internal object AvroConversion {
         return when (effective.getType()) {
             Schema.Type.STRING -> if (value is CharSequence) value.toString() else value.toString()
             Schema.Type.BYTES -> if (value is ByteArray) ByteBuffer.wrap(value) else value
-            Schema.Type.RECORD -> if (value is MutableMap<*, *>)
-                toGenericRecord(value as MutableMap<String?, Any?>, effective)
+            Schema.Type.RECORD -> if (value is Map<*, *>)
+                toGenericRecord(value as Map<String, Any>, effective)
             else
                 value
 
             Schema.Type.ARRAY -> {
-                val src = if (value is MutableList<*>) value as MutableList<Any?> else List.of<Any?>(value)
-                val out: MutableList<Any?> = ArrayList<Any?>(src.size)
-                for (item in src) out.add(wrap(item, effective.getElementType()))
-                out
+                val src = if (value is MutableList<*>) value as MutableList<Any?> else listOf(value)
+                src.map { wrap(it, effective.elementType) }
             }
 
             Schema.Type.MAP -> {
                 val src = value as MutableMap<String?, Any?>
-                val out: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
+                val out: MutableMap<String?, Any?> = LinkedHashMap()
                 for (entry in src.entries) {
                     out.put(entry.key, wrap(entry.value, effective.getValueType()))
                 }
@@ -110,9 +107,9 @@ internal object AvroConversion {
         // Fall back to the first non-null branch — common for nullable
         // fields where we're writing a non-null value.
         for (branch in schema.getTypes()) {
-            if (branch.getType() != Schema.Type.NULL) return branch
+            if (branch.type != Schema.Type.NULL) return branch
         }
-        return schema.getTypes().getFirst()
+        return schema.types.first()
     }
 
     private fun branchMatches(branch: Schema, value: Any?): Boolean {

@@ -12,9 +12,6 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.util.List
-import java.util.Map
-import java.util.concurrent.ConcurrentHashMap
 
 /** Poll a directory for files and stream them into the pipeline. Files
  * consumed by the pipeline are moved to a `.processed/`
@@ -80,32 +77,25 @@ class GetFile(
         return out
     }
 
-    private fun emitFor(file: Path): MutableList<FlowFile> {
+    private fun emitFor(file: Path): List<FlowFile> {
         val bytes: ByteArray = try {
             Files.readAllBytes(file)
         } catch (ex: IOException) {
             // File might have been removed or partially written between
             // the listing and the read — skip this round, the next poll
             // picks it up.
-            log.debug("GetFile {}: could not read {} ({}) — skipping", name(), file, ex.toString())
+            log.debug("GetFile ${name()}: could not read $file ($ex) — skipping")
             return mutableListOf()
         }
 
         if (unpackV3 && looksLikeV3(bytes)) {
             val frames = FlowFileV3.unpackAll(bytes)
-            if (!frames.isEmpty()) {
-                val out: MutableList<FlowFile> = ArrayList<FlowFile>(frames.size)
-                for (i in frames.indices) {
-                    out.add(addAttrs(frames[i]!!, file, bytes.size.toLong(), true, i, frames.size))
-                }
-                return out
+            if (frames.isNotEmpty()) {
+                return frames.mapIndexed { idx, frame -> addAttrs(frame, file, bytes.size.toLong(), true, idx, frames.size) }
             }
-            // Well-formed magic but no frames decoded — fall through and
-            // treat the file as raw. Losing malformed V3 silently would
-            // hide bugs; treating it as raw surfaces the bytes for ops.
         }
 
-        return mutableListOf(
+        return listOf(
             addAttrs(
                 FlowFile.create(bytes, mutableMapOf()),
                 file,
@@ -118,26 +108,30 @@ class GetFile(
     }
 
     private fun addAttrs(
-        base: FlowFile, file: Path, rawSize: Long,
-        v3: Boolean, frameIndex: Int, frameCount: Int
+        base: FlowFile,
+        file: Path,
+        rawSize: Long,
+        v3: Boolean,
+        frameIndex: Int,
+        frameCount: Int
     ): FlowFile {
-        val attrs: MutableMap<String?, String?> = LinkedHashMap<String?, String?>(base.attributes)
-        attrs.put(FlowFileAttributes.FILENAME, file.getFileName().toString())
-        attrs.put(FlowFileAttributes.PATH, file.toAbsolutePath().toString())
-        attrs.put(FlowFileAttributes.SOURCE, name())
-        if (v3) {
-            attrs.put(FlowFileAttributes.V3_FRAME_INDEX, frameIndex.toString())
-            attrs.put(FlowFileAttributes.V3_FRAME_COUNT, frameCount.toString())
-        } else {
-            attrs.put(FlowFileAttributes.SIZE, rawSize.toString())
+        val attrs = buildMap {
+            put(FlowFileAttributes.FILENAME, file.fileName.toString())
+            put(FlowFileAttributes.PATH, file.toAbsolutePath().toString())
+            put(FlowFileAttributes.SOURCE, name())
+            if (v3) {
+                put(FlowFileAttributes.V3_FRAME_INDEX, frameIndex.toString())
+                put(FlowFileAttributes.V3_FRAME_COUNT, frameCount.toString())
+            } else {
+                put(FlowFileAttributes.SIZE, rawSize.toString())
+            }
         }
         return FlowFile(base.id, attrs, base.content, base.timestampMillis, base.hopCount)
     }
 
     override fun onIngested(ff: FlowFile) {
-        val file = pendingMoves.remove(ff.id)
-        if (file == null) return
-        val remaining = outstandingPerFile.computeIfPresent(file) { k: Path?, v: Int? -> v!! - 1 }
+        val file = pendingMoves.remove(ff.id) ?: return
+        val remaining = outstandingPerFile.computeIfPresent(file) { _: Path?, v: Int? -> v!! - 1 }
         if (remaining != null && remaining <= 0) {
             outstandingPerFile.remove(file)
             moveToProcessed(file)
@@ -157,7 +151,7 @@ class GetFile(
             Files.createDirectories(processedDir)
             val target = processedDir.resolve(file.getFileName())
             Files.move(file, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-        } catch (ex: IOException) {
+        } catch (_: IOException) {
             // Non-atomic fallback — some filesystems (e.g. across mount
             // boundaries) don't support ATOMIC_MOVE. Best-effort copy;
             // a failure here means the file will re-ingest on the next
@@ -168,8 +162,8 @@ class GetFile(
                     file, processedDir.resolve(file.getFileName()),
                     StandardCopyOption.REPLACE_EXISTING
                 )
-            } catch (ex2: IOException) {
-                log.warn("GetFile {}: failed to move {} to {} — {}", name(), file, processedDir, ex2.toString())
+            } catch (ex: IOException) {
+                log.warn("GetFile ${name()}: failed to move $file to $processedDir — $ex")
             }
         }
     }
@@ -177,7 +171,7 @@ class GetFile(
     private fun ensureDirs() {
         try {
             Files.createDirectories(inputDir)
-        } catch (ex: IOException) { /* tolerate — poll will surface issues */
+        } catch (_: IOException) { /* tolerate — poll will surface issues */
         }
     }
 
@@ -191,43 +185,22 @@ class GetFile(
             return "Polls a directory; emits one FlowFile per file (V3 bundles are unpacked)."
         }
 
-        override fun configKeys(): MutableList<String?> {
-            return mutableListOf<String?>("inputDir", "pattern", "pollIntervalMs", "unpackV3")
+        override fun configKeys(): List<String> {
+            return listOf("inputDir", "pattern", "pollIntervalMs", "unpackV3")
         }
 
-        override fun create(name: String?, config: MutableMap<String?, Any?>): Source? {
-            val inputDir: String = str(config.get("inputDir"))
+        override fun create(name: String, config: Map<String, Any>): Source? {
+            val inputDir: String = config["inputDir"]?.toString() ?: ""
             if (inputDir.isEmpty()) return null // disabled when inputDir is absent
 
             return GetFile(
                 name,
                 Path.of(inputDir),
-                str(config.getOrDefault("pattern", "*")),
-                longOr(config.get("pollIntervalMs"), 1000),
-                boolOr(config.get("unpackV3"), true)
+                config.getOrDefault("pattern", "*").toString(),
+                config["pollIntervalMs"] as? Long ?: 1000,
+                config["unpackV3"] as? Boolean ?: true,
+                false
             )
-        }
-
-        companion object {
-            private fun str(o: Any?): String {
-                return if (o == null) "" else o.toString()
-            }
-
-            private fun longOr(o: Any?, fallback: Long): Long {
-                if (o == null) return fallback
-                if (o is Number) return o.toLong()
-                try {
-                    return o.toString().trim { it <= ' ' }.toLong()
-                } catch (ex: NumberFormatException) {
-                    return fallback
-                }
-            }
-
-            private fun boolOr(o: Any?, fallback: Boolean): Boolean {
-                if (o == null) return fallback
-                if (o is Boolean) return o
-                return "true".equals(o.toString().trim { it <= ' ' }, ignoreCase = true)
-            }
         }
     }
 

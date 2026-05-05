@@ -40,10 +40,6 @@ import kotlin.Deprecated
 import kotlin.Int
 import kotlin.NumberFormatException
 import kotlin.String
-import kotlin.code
-import kotlin.plus
-import kotlin.require
-import kotlin.requireNotNull
 
 /** Processor registry — maps the `type:` value in config.yaml to
  * a factory that instantiates the processor given its config map plus
@@ -65,7 +61,7 @@ class Registry {
      * care can pass `new ProcessorContext()` and ignore it inside
      * the factory. */
     fun interface Factory {
-        fun create(config: Map<String, String>, ctx: ProcessorContext?): Processor?
+        fun create(config: Map<String, String>, ctx: ProcessorContext): Processor?
     }
 
     /** Metadata about a registered processor type. The UI renders the
@@ -76,8 +72,8 @@ class Registry {
         val name: String,
         val version: String,
         val description: String?,
-        val configKeys: MutableList<String> = mutableListOf(),
-        val relationships: MutableList<String> = mutableListOf(),
+        val configKeys: List<String> = listOf(),
+        val relationships: List<String> = listOf(),
         val category: String? = "Other",
         val parameters: MutableList<ParamInfo> = configKeys
             .map { k: String -> ParamInfo.of(k).build() }
@@ -199,7 +195,7 @@ class Registry {
             "LogAttribute", "Logs FlowFile attributes and passes through", "Attribute",
             mutableListOf(ParamInfo.of("prefix").description("Log line prefix").defaultValue("").build()),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, ctx: ProcessorContext? ->
             LogAttribute(cfg.getOrDefault("prefix", "" ), loggerFrom(ctx ?: ProcessorContext()))
         }
 
@@ -209,7 +205,7 @@ class Registry {
                 ParamInfo.of("value").required().placeholder("prod").build()
             ),
             mutableListOf("success"),
-        ) { cfg: MutableMap<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             UpdateAttribute(required(cfg, "key"), cfg.getOrDefault("value", "") )
         }
 
@@ -221,7 +217,7 @@ class Registry {
                     .build()
             ),
             mutableListOf("unmatched")
-        ) { cfg: MutableMap<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             RouteOnAttribute(cfg.getOrDefault("routes", ""))
         }
 
@@ -235,7 +231,7 @@ class Registry {
                     .description("attribute names to remove or keep").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             FilterAttribute(
                 cfg.getOrDefault("mode", "remove"),
                 cfg.getOrDefault("attributes", "")
@@ -250,7 +246,7 @@ class Registry {
                     .choices("raw", "v3").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, ctx: ProcessorContext? ->
             PutStdout(cfg.getOrDefault("prefix", ""),
                 cfg.getOrDefault("format", "raw"),
                 storeFrom(ctx!!)
@@ -265,7 +261,7 @@ class Registry {
                     .choices("raw", "v3").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, ctx: ProcessorContext? ->
             PutFile(
                 required(cfg, "directory"),
                 cfg.getOrDefault("append", "false").toBoolean(),
@@ -286,7 +282,7 @@ class Registry {
                     .choices("raw", "v3").build()
             ),
             mutableListOf("success", "failure")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, ctx: ProcessorContext? ->
             PutHTTP(
                 required(cfg, "endpoint"),
                 cfg.getOrDefault("method", "POST"),
@@ -301,14 +297,14 @@ class Registry {
         registerTyped("PackageFlowFileV3", "Wrap (attributes + content) into NiFi V3 binary content", "V3",
             mutableListOf(),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { _: Map<String, String>, ctx: ProcessorContext? ->
             PackageFlowFileV3(storeFrom(ctx!!))
         }
 
         registerTyped("UnpackageFlowFileV3", "Decode V3 binary content into one or more FlowFiles", "V3",
             mutableListOf(),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { _: Map<String, String>, ctx: ProcessorContext? ->
             UnpackageFlowFileV3(storeFrom(ctx!!))
         }
 
@@ -321,7 +317,7 @@ class Registry {
                     .choices("all", "first").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             ReplaceText(
                 required(cfg, "pattern"),
                 cfg.getOrDefault("replacement", ""),
@@ -336,7 +332,7 @@ class Registry {
                 ParamInfo.of("headerLines").kind(ParamKind.INTEGER).defaultValue("0").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             SplitText(
                 required(cfg, "delimiter"),
                 parseInt(cfg.getOrDefault("headerLines", "0"), 0)
@@ -346,12 +342,12 @@ class Registry {
         registerTyped(
             "ExtractText", "Regex capture groups → attributes", "Text",
             mutableListOf(
-                ParamInfo.Companion.of("pattern").required().placeholder("(?<user>\\w+)@(?<host>\\w+)").build(),
-                ParamInfo.Companion.of("groupNames").placeholder("user,host")
+                ParamInfo.of("pattern").required().placeholder("(?<user>\\w+)@(?<host>\\w+)").build(),
+                ParamInfo.of("groupNames").placeholder("user,host")
                     .description("comma-separated names for positional groups").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, ctx: ProcessorContext? ->
             ExtractText(required(cfg, "pattern"), cfg.getOrDefault("groupNames", ""), storeFrom(ctx!!))
         }
 
@@ -359,7 +355,7 @@ class Registry {
         registerTyped("ConvertJSONToRecord", "Parses JSON content into records", "Conversion",
             mutableListOf(ParamInfo.of("schemaName").defaultValue("").build()),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             ConvertJSONToRecord(cfg.getOrDefault("schemaName", ""))
         }
 
@@ -368,7 +364,7 @@ class Registry {
                 ParamInfo.of("singleObject").kind(ParamKind.BOOLEAN).defaultValue("false").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             ConvertRecordToJSON(cfg.getOrDefault("singleObject", "false").toBoolean())
         }
 
@@ -380,7 +376,7 @@ class Registry {
                 ParamInfo.of("fields").placeholder("id:long,name:string").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             ConvertCSVToRecord(
                 cfg.getOrDefault("schemaName", ""),
                 cfg.getOrDefault("delimiter", ",").first(),
@@ -395,7 +391,7 @@ class Registry {
                 ParamInfo.of("includeHeader").kind(ParamKind.BOOLEAN).defaultValue("true").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             ConvertRecordToCSV(
                 cfg.getOrDefault("delimiter", ",").first(),
                 !cfg.getOrDefault("includeHeader", "true").toBoolean()
@@ -409,7 +405,7 @@ class Registry {
                     .description("comma-separated name:type pairs").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             ConvertAvroToRecord(
                 cfg.getOrDefault("schemaName", ""),
                 cfg.getOrDefault("fields", "")
@@ -419,14 +415,14 @@ class Registry {
         registerTyped("ConvertRecordToAvro", "Encode records to Avro binary", "Conversion",
             mutableListOf(),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { _: Map<String, String>, _: ProcessorContext? ->
             ConvertRecordToAvro()
         }
 
         registerTyped("ConvertOCFToRecord", "Decode Avro OCF (.avro file) into records", "Conversion",
             mutableListOf(),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { _: Map<String, String>, _: ProcessorContext? ->
             ConvertOCFToRecord()
         }
 
@@ -436,7 +432,7 @@ class Registry {
                     .choices("null", "deflate", "snappy", "bzip2", "xz", "zstandard").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             ConvertRecordToOCF(cfg.getOrDefault("codec", "null"))
         }
 
@@ -449,7 +445,7 @@ class Registry {
                     .description("attr=expression pairs").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             EvaluateExpression(parseTransforms(required(cfg, "expressions")))
         }
 
@@ -460,7 +456,7 @@ class Registry {
                     .description("semicolon-delimited op:arg1[:arg2] directives").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             TransformRecord(required(cfg, "operations"))
         }
 
@@ -472,7 +468,7 @@ class Registry {
                     .description("field=expression pairs; later pairs see earlier writes").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             UpdateRecord(cfg.getOrDefault("updates", ""))
         }
 
@@ -486,7 +482,7 @@ class Registry {
                 ParamInfo.of("recordIndex").kind(ParamKind.INTEGER).defaultValue("0").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             ExtractRecordField(
                 required(cfg, "fields"),
                 parseInt(cfg.getOrDefault("recordIndex", "0"), 0)
@@ -500,14 +496,14 @@ class Registry {
                     .description("JsonPath filter against the record batch").build()
             ),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             QueryRecord(required(cfg, "query"))
         }
 
         registerTyped("SplitRecord", "Fan out a RecordContent FlowFile into one FlowFile per record", "Record",
             mutableListOf(),
             mutableListOf("success")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { _: Map<String, String>, _: ProcessorContext? ->
             SplitRecord()
         }
 
@@ -521,15 +517,14 @@ class Registry {
                     .build()
             ),
             mutableListOf("unmatched")
-        ) { cfg: MutableMap<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext? ->
             RouteRecord(cfg.getOrDefault("routes", ""))
         }
     }
 
     companion object {
-        @JvmField
         @Deprecated("use {@link TypeRefs#DEFAULT_VERSION}. ")
-        val DEFAULT_VERSION: String = TypeRefs.DEFAULT_VERSION
+        const val DEFAULT_VERSION: String = TypeRefs.DEFAULT_VERSION
 
         @JvmStatic
         @Deprecated("use {@link TypeRefs#compareVersions(String, String)}. ")
@@ -539,7 +534,7 @@ class Registry {
 
         @Deprecated("use {@link TypeRefs.TypeRef}. ")
         fun parseTypeRef(raw: String?): TypeRefs.TypeRef {
-            return TypeRefs.TypeRef.Companion.parse(raw)
+            return TypeRefs.TypeRef.parse(raw)
         }
 
         /** Return the content store exposed by the `"content"`
@@ -573,15 +568,15 @@ class Registry {
         }
 
         private fun parseInt(s: String?, fallback: Int): Int {
-            if (s == null || s.isBlank()) return fallback
-            try {
-                return Integer.parseInt(s.trim())
+            if (s.isNullOrBlank()) return fallback
+            return try {
+                Integer.parseInt(s.trim())
             } catch (e: NumberFormatException) {
-                return fallback
+                fallback
             }
         }
 
-        private fun required(cfg: MutableMap<String, String>, key: String?): String {
+        private fun required(cfg: Map<String, String>, key: String?): String {
             val value: String = cfg[key]!!
             return value
         }

@@ -30,7 +30,7 @@ final class GraphMutationHttpTest {
     void boot() {
         var registry = new Registry();
         var context = new ProcessorContext();
-        pipeline = new Pipeline(PipelineGraphKt.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
+        pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
         // Seed three processors via the admin API semantics so they're
         // routable once edges land.
         pipeline.addProcessor("a", "LogAttribute", java.util.Map.of(), java.util.List.of(), java.util.Map.of());

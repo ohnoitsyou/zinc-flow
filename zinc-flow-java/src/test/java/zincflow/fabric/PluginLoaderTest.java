@@ -1,5 +1,8 @@
 package zincflow.fabric;
 
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import zincflow.core.ComponentState;
@@ -11,13 +14,12 @@ import zincflow.core.ProcessorResult;
 import zincflow.core.Provider;
 import zincflow.core.ProviderPlugin;
 
-import java.io.ByteArrayOutputStream;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
@@ -34,10 +36,10 @@ final class PluginLoaderTest {
         var ctx = new ProcessorContext();
         var summary = PluginLoader.load(getClass().getClassLoader(), registry, ctx);
 
-        assertTrue(summary.processorTypes().contains("FixtureProcessor@1.0.0"),
-                "expected FixtureProcessor@1.0.0 in " + summary.processorTypes());
-        assertTrue(summary.providerNames().contains("fixture"),
-                "expected fixture provider in " + summary.providerNames());
+        assertTrue(summary.getProcessorTypes().contains("FixtureProcessor@1.0.0"),
+                "expected FixtureProcessor@1.0.0 in " + summary.getProcessorTypes());
+        assertTrue(summary.getProviderNames().contains("fixture"),
+                "expected fixture provider in " + summary.getProviderNames());
         assertNotNull(registry.create("FixtureProcessor", Map.of(), ctx));
         assertNotNull(ctx.getProvider("fixture"));
     }
@@ -63,10 +65,10 @@ final class PluginLoaderTest {
         var ctx = new ProcessorContext();
         var summary = PluginLoader.loadFromDirectory(pluginsDir, registry, ctx);
 
-        assertEquals(1, summary.jars().size());
-        assertEquals(jarPath, summary.jars().get(0));
-        assertTrue(summary.processorTypes().contains("DropIn@1.0.0"));
-        assertTrue(summary.providerNames().contains("dropin"));
+        assertEquals(1, Objects.requireNonNull(summary.getJars()).size());
+        assertEquals(jarPath, summary.getJars().getFirst());
+        assertTrue(summary.getProcessorTypes().contains("DropIn@1.0.0"));
+        assertTrue(summary.getProviderNames().contains("dropin"));
         assertNotNull(ctx.getProvider("dropin"));
 
         // Processor registered in Registry is live.
@@ -81,7 +83,7 @@ final class PluginLoaderTest {
         var ctx = new ProcessorContext();
         var summary = PluginLoader.loadFromDirectory(missing, registry, ctx);
         assertEquals(0, summary.totalLoaded());
-        assertEquals(0, summary.jars().size());
+        assertEquals(0, Objects.requireNonNull(summary.getJars()).size());
     }
 
     @Test
@@ -100,14 +102,14 @@ final class PluginLoaderTest {
         // actually classloader-scoped.
         var emptyLoader = new URLClassLoader(new java.net.URL[0], null);
         var summary = PluginLoader.load(emptyLoader, registry, ctx);
-        assertFalse(summary.processorTypes().contains("FixtureProcessor@1.0.0"));
-        assertFalse(summary.providerNames().contains("fixture"));
+        assertFalse(summary.getProcessorTypes().contains("FixtureProcessor@1.0.0"));
+        assertFalse(summary.getProviderNames().contains("fixture"));
     }
 
     // --- Fixture service implementations ---
 
     public static final class FixtureProcessor implements Processor {
-        @Override public ProcessorResult process(FlowFile ff) { return ProcessorResult.single(ff); }
+        @Override public ProcessorResult process(FlowFile ff) { return ProcessorResult.Single.Companion.invoke(ff); }
     }
 
     public static final class FixtureProcessorPlugin implements ProcessorPlugin {
@@ -129,11 +131,13 @@ final class PluginLoaderTest {
 
     public static final class FixtureProviderPlugin implements ProviderPlugin {
         @Override public String providerType() { return "fixture"; }
-        @Override public Provider create(Map<String, Object> config) { return new FixtureProvider(); }
+
+        @Override
+        public Provider create(@NotNull Map<String, ?> config) { return new FixtureProvider(); }
     }
 
     public static final class DropInProcessor implements Processor {
-        @Override public ProcessorResult process(FlowFile ff) { return ProcessorResult.dropped(); }
+        @Override public ProcessorResult process(FlowFile ff) { return new ProcessorResult.Dropped(); }
     }
 
     public static final class DropInProcessorPlugin implements ProcessorPlugin {
@@ -154,8 +158,8 @@ final class PluginLoaderTest {
     }
 
     public static final class DropInProviderPlugin implements ProviderPlugin {
-        @Override public String providerType() { return "dropin"; }
-        @Override public Provider create(Map<String, Object> config) { return new DropInProvider(); }
+        @Override public @NonNull String providerType() { return "dropin"; }
+        @Override public Provider create(@NotNull Map<String, ?> config) { return new DropInProvider(); }
     }
 
     /// Build a minimal jar at {@code jarPath} containing only the given

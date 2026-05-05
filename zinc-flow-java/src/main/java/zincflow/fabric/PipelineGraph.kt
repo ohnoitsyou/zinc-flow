@@ -18,21 +18,21 @@ import kotlin.collections.toMap
  * sources (top of the DAG)
  */
 
-data class PipelineGraphKtt(
+data class PipelineGraph(
     val processors: Map<String, Processor>,
     val connections: Map<String, Map<String, List<String>>>,
     val entryPoints: List<String>,
     val graphVersion: Int = 0,
 ) {
     companion object {
-        fun empty() = PipelineGraphKt(emptyMap(), emptyMap(), emptyList())
+        fun empty() = PipelineGraph(emptyMap(), emptyMap(), emptyList())
         fun of(
             processors: Map<String, Processor>,
             connections: Map<String, Map<String, List<String>>>,
             entryPoints: List<String>,
             graphVersion: Int = 0
-        ): PipelineGraphKtt {
-            return PipelineGraphKtt(
+        ): PipelineGraph {
+            return PipelineGraph(
                 processors = Collections.unmodifiableMap(processors.toMap()),
                 connections = Collections.unmodifiableMap(
                     connections.mapValues { (_, rels) ->

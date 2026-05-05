@@ -31,29 +31,17 @@ import java.util.function.Function
  * shape so any existing tooling that handles those errors works
  * against us unchanged. Mirrors zinc-flow-csharp's
  * `SchemaRegistryHandler`. */
-class SchemaRegistryHandler(registry: SchemaRegistryProvider) {
-    private val registry: SchemaRegistryProvider
+class SchemaRegistryHandler(val registry: SchemaRegistryProvider) {
     private val json = ObjectMapper()
 
-    init {
-        requireNotNull(registry) { "registry must not be null" }
-        this.registry = registry
-    }
-
     fun mapRoutes(app: Javalin) {
-        app.get("/api/schema-registry/schemas/ids/{id}", Handler { ctx: Context? -> this.getById(ctx!!) })
-        app.get("/api/schema-registry/subjects", Handler { ctx: Context? -> this.listSubjects(ctx!!) })
-        app.get(
-            "/api/schema-registry/subjects/{subject}/versions",
-            Handler { ctx: Context? -> this.listVersions(ctx!!) })
-        app.get(
-            "/api/schema-registry/subjects/{subject}/versions/{version}",
-            Handler { ctx: Context? -> this.getVersion(ctx!!) })
-        app.post("/api/schema-registry/subjects/{subject}/versions", Handler { ctx: Context? -> this.register(ctx!!) })
-        app.delete("/api/schema-registry/subjects/{subject}", Handler { ctx: Context? -> this.deleteSubject(ctx!!) })
-        app.delete(
-            "/api/schema-registry/subjects/{subject}/versions/{version}",
-            Handler { ctx: Context? -> this.deleteVersion(ctx!!) })
+        app.get("/api/schema-registry/schemas/ids/{id}") { this.getById(it) }
+        app.get("/api/schema-registry/subjects") { this.listSubjects(it) }
+        app.get("/api/schema-registry/subjects/{subject}/versions") { this.listVersions(it) }
+        app.get("/api/schema-registry/subjects/{subject}/versions/{version}") { this.getVersion(it) }
+        app.post("/api/schema-registry/subjects/{subject}/versions") { this.register(it) }
+        app.delete("/api/schema-registry/subjects/{subject}") { this.deleteSubject(it) }
+        app.delete("/api/schema-registry/subjects/{subject}/versions/{version}") { this.deleteVersion(it) }
     }
 
     // --- GET /schemas/ids/{id} → {"schema":"..."} ---
@@ -68,7 +56,7 @@ class SchemaRegistryHandler(registry: SchemaRegistryProvider) {
         }
         val entry = registry.getById(id)
         if (entry.isEmpty()) {
-            error(ctx, 404, 40403, "schema id " + id + " not found")
+            error(ctx, 404, 40403, "schema id $id not found")
             return
         }
         write(ctx, 200, Map.of<String?, String?>("schema", entry.get().definition))
@@ -86,7 +74,7 @@ class SchemaRegistryHandler(registry: SchemaRegistryProvider) {
         val subject = ctx.pathParam("subject")
         val versions = registry.listVersions(subject)
         if (versions.isEmpty()) {
-            error(ctx, 404, 40401, "subject '" + subject + "' not found")
+            error(ctx, 404, 40401, "subject '$subject' not found")
             return
         }
         writeRaw(ctx, 200, json.writeValueAsBytes(versions))
@@ -100,35 +88,33 @@ class SchemaRegistryHandler(registry: SchemaRegistryProvider) {
         val entry = if ("latest" == version)
             registry.latest(subject)
         else
-            parseVersion(ctx, version).flatMap<SchemaRegistryProvider.Schema?>(Function { v: Int? ->
-                registry.getEntry(
-                    subject,
-                    v!!
-                )
-            })
+            parseVersion(version).flatMap<SchemaRegistryProvider.Schema> { v: Int ->
+                registry.getEntry(subject, v)
+            }
         if (entry.isEmpty()) {
             // Distinguish unknown subject vs unknown version — Confluent does.
             if (!registry.listSubjects().contains(subject)) {
-                error(ctx, 404, 40401, "subject '" + subject + "' not found")
+                error(ctx, 404, 40401, "subject '$subject' not found")
             } else {
-                error(ctx, 404, 40402, "subject '" + subject + "' version " + version + " not found")
+                error(ctx, 404, 40402, "subject '$subject' version $version not found")
             }
             return
         }
         val s = entry.get()
-        val body: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        body.put("subject", s.subject)
-        body.put("version", s.version)
-        body.put("id", s.id)
-        body.put("schema", s.definition)
+        val body = buildMap {
+            put("subject", s.subject ?: "")
+            put("version", s.version)
+            put("id", s.id)
+            put("schema", s.definition ?: "")
+        }
         write(ctx, 200, body)
     }
 
-    private fun parseVersion(ctx: Context?, raw: String): Optional<Int?> {
-        try {
-            return Optional.of<Int?>(Integer.parseInt(raw))
-        } catch (e: NumberFormatException) {
-            return Optional.empty<Int?>()
+    private fun parseVersion(raw: String): Optional<Int> {
+        return try {
+            Optional.of<Int>(Integer.parseInt(raw))
+        } catch (_: NumberFormatException) {
+            Optional.empty<Int>()
         }
     }
 
@@ -147,7 +133,7 @@ class SchemaRegistryHandler(registry: SchemaRegistryProvider) {
             }
             schemaDef = schemaNode.asText()
         } catch (ex: Exception) {
-            error(ctx, 422, 42201, "request body is not valid JSON: " + ex.getMessage())
+            error(ctx, 422, 42201, "request body is not valid JSON: " + ex.message)
             return
         }
 
@@ -155,9 +141,9 @@ class SchemaRegistryHandler(registry: SchemaRegistryProvider) {
             val registered = registry.register(subject, schemaDef)
             write(ctx, 200, Map.of<String?, Int?>("id", registered.id))
         } catch (ex: IllegalArgumentException) {
-            error(ctx, 422, 42202, "register failed: " + ex.getMessage())
+            error(ctx, 422, 42202, "register failed: " + ex.message)
         } catch (ex: RuntimeException) {
-            error(ctx, 500, 50001, "register failed: " + ex.getMessage())
+            error(ctx, 500, 50001, "register failed: " + ex.message)
         }
     }
 
@@ -167,7 +153,7 @@ class SchemaRegistryHandler(registry: SchemaRegistryProvider) {
         val subject = ctx.pathParam("subject")
         val removed = registry.deleteSubject(subject)
         if (removed.isEmpty()) {
-            error(ctx, 404, 40401, "subject '" + subject + "' not found")
+            error(ctx, 404, 40401, "subject '$subject' not found")
             return
         }
         writeRaw(ctx, 200, json.writeValueAsBytes(removed))
@@ -186,7 +172,7 @@ class SchemaRegistryHandler(registry: SchemaRegistryProvider) {
         }
         val deleted = registry.deleteVersion(subject, version)
         if (!deleted) {
-            error(ctx, 404, 40402, "subject '" + subject + "' version " + version + " not found")
+            error(ctx, 404, 40402, "subject '$subject' version $version not found")
             return
         }
         writeRaw(ctx, 200, json.writeValueAsBytes(version))

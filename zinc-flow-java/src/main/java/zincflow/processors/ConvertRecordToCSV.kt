@@ -7,7 +7,6 @@ import zincflow.core.Processor
 import zincflow.core.ProcessorResult
 import zincflow.core.RawContent
 import zincflow.core.RecordContent
-import java.util.List
 
 /** Serializes [RecordContent] to CSV text. Mirrors zinc-flow-csharp's
  * `ConvertRecordToCSV` (StdLib/RecordProcessors.cs:346-364).
@@ -25,29 +24,30 @@ class ConvertRecordToCSV @JvmOverloads constructor(
     private val includeHeader: Boolean = true
 ) : Processor {
     override fun process(ff: FlowFile): ProcessorResult {
-        if (ff.content !is RecordContent) {
-            return ProcessorResult.failure(
-                "ConvertRecordToCSV: expected RecordContent, got " + ff.content.javaClass.getSimpleName(), ff
+        val content = ff.content
+        if (content !is RecordContent) {
+            return ProcessorResult.Failure(
+                "ConvertRecordToCSV: expected RecordContent, got " + content.javaClass.getSimpleName(), ff
             )
         }
-        val records: MutableList<MutableMap<String?, Any?>?> = rc.records
+        val records: List<Map<String, Any>> = content.records
 
         if (records.isEmpty()) {
             // Empty record list → empty payload. Can't emit a header
             // without a first record to source keys from.
-            return ProcessorResult.single(ff.withContent(RawContent(ByteArray(0))))
+            return ProcessorResult.Single(ff.withContent(RawContent(ByteArray(0))))
         }
 
-        val columns = List.copyOf<String?>(records.getFirst().keys)
+        val columns = records.first().keys.toList()
         val sb = CsvSchema.builder().setColumnSeparator(delimiter)
         for (c in columns) sb.addColumn(c)
         val schema = sb.build().withUseHeader(includeHeader)
 
         try {
-            val bytes: ByteArray? = MAPPER.writer(schema).writeValueAsBytes(records)
-            return ProcessorResult.single(ff.withContent(RawContent(bytes)))
+            val bytes: ByteArray = MAPPER.writer(schema).writeValueAsBytes(records)
+            return ProcessorResult.Single(ff.withContent(RawContent(bytes)))
         } catch (ex: Exception) {
-            return ProcessorResult.failure("ConvertRecordToCSV: serialize failed — " + ex.message, ff)
+            return ProcessorResult.Failure("ConvertRecordToCSV: serialize failed — $ex", ff)
         }
     }
 

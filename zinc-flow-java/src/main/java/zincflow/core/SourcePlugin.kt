@@ -33,5 +33,5 @@ interface SourcePlugin {
     /** Instantiate the source given its config-file name and config
      * map. `name` is the key under `sources:` in YAML —
      * the source uses it as its own [Source.name]. */
-    fun create(name: String, config: MutableMap<String, Any?>): Source?
+    fun create(name: String, config: Map<String, Any>): Source?
 }

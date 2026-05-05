@@ -17,12 +17,13 @@ import java.util.Map;
 ///                    "failure", "matched") → list of target processor names
 /// @param entryPoints processor names that receive fresh FlowFiles from
 ///                    sources (top of the DAG)
-public record PipelineGraphKt(
+public record PipelineGraphJ(
         Map<String, Processor> processors,
         Map<String, Map<String, List<String>>> connections,
-        List<String> entryPoints) {
+        List<String> entryPoints
+) {
 
-    public PipelineGraphKt {
+    public PipelineGraphJ {
         // Preserve insertion order — Map.copyOf uses an internal
         // randomized hash, which would scramble processor declaration
         // order and break YAML round-trips through YamlEmitter.
@@ -39,8 +40,8 @@ public record PipelineGraphKt(
         entryPoints = List.copyOf(entryPoints);
     }
 
-    public static PipelineGraphKt empty() {
-        return new PipelineGraphKt(Map.of(), Map.of(), List.of());
+    public static PipelineGraphJ empty() {
+        return new PipelineGraphJ(Map.of(), Map.of(), List.of());
     }
 
     /// Next processor names reachable from {@code fromProcessor} along

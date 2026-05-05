@@ -4,7 +4,6 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import zincflow.core.ComponentState
 import zincflow.core.FlowFile
-import zincflow.core.Processor
 import zincflow.core.ProcessorContext
 import zincflow.core.ProcessorResult
 import zincflow.core.Relationships
@@ -12,17 +11,13 @@ import zincflow.core.Source
 import zincflow.providers.ProvenanceProvider
 import java.util.ArrayDeque
 import java.util.Deque
-import java.util.List
-import java.util.Map
 import java.util.Objects
 import java.util.concurrent.ConcurrentHashMap
-import java.util.function.Predicate
-import java.util.function.Supplier
 import kotlin.collections.emptyList
 import kotlin.concurrent.Volatile
 
-typealias ConnectionMap = MutableMap<String, MutableMap<String, MutableList<String>>>
-typealias RelationshipMap = MutableMap<String, MutableList<String>>
+typealias ConnectionMap = MutableMap<String, Map<String, List<String>>>
+typealias RelationshipMap = MutableMap<String, List<String>>
 /** Direct pipeline executor — iterative, depth-first, work-stack. No
  * inter-stage queues. Each call to [.ingest] runs the
  * FlowFile through the graph on the calling thread; concurrency comes
@@ -30,12 +25,12 @@ typealias RelationshipMap = MutableMap<String, MutableList<String>>
  * 
  * Matches the zinc-flow-csharp model — see
  * `zinc-flow-csharp/ZincFlow/Fabric/Fabric.cs`. */
-class PipelineKt(
-    @Volatile private var graph: PipelineGraphKt,
+class Pipeline @JvmOverloads constructor(
+    @Volatile private var graph: PipelineGraph,
     private val maxHops: Int = DEFAULT_MAX_HOPS,
     metrics: Metrics? = null,
     private val context: ProcessorContext = ProcessorContext(),
-    private val registry: Registry? = null
+    private val registry: Registry = Registry(),
 ) {
     private val stats: Stats = Stats(metrics)
 //    private val context: ProcessorContext
@@ -63,7 +58,7 @@ class PipelineKt(
         return context
     }
 
-    fun registry(): Registry? {
+    fun registry(): Registry {
         return registry
     }
 
@@ -86,10 +81,11 @@ class PipelineKt(
     fun recordProcessorDef(
         name: String,
         type: String,
-        config: MutableMap<String, String>,
-        requires: MutableList<String>
+        config: Map<String, String>,
+        requires: List<String>
     ) {
-        processorDefs[name] = ProcessorDef(type, config.toMutableMap(), requires.toMutableList())
+        // Explicit copy even though probably not required
+        processorDefs[name] = ProcessorDef(type, config.toMap(), requires.toList())
         processorStates.putIfAbsent(name, ComponentState.ENABLED)
     }
 
@@ -103,7 +99,6 @@ class PipelineKt(
         requires: MutableList<String>,
         connections: MutableMap<String, MutableList<String>>
     ): Boolean {
-        if (registry == null) return false
         if (name.isEmpty()) return false
         val g = graph
         if (g.processors.containsKey(name)) return false
@@ -122,7 +117,7 @@ class PipelineKt(
             connections.forEach { (k: String, v: MutableList<String>) -> copy[k] = v.toMutableList() }
             newConnections[name] = copy
         }
-        graph = PipelineGraphKt(newProcessors, newConnections, g.entryPoints)
+        graph = PipelineGraph(newProcessors, newConnections, g.entryPoints)
         recordProcessorDef(name, type, config, req)
         return true
     }
@@ -134,7 +129,7 @@ class PipelineKt(
         val newConnections = g.connections.filter { it.key == name }.toMutableMap()
         val newEntries: MutableList<String> = ArrayList(g.entryPoints)
         newEntries.remove(name)
-        graph = PipelineGraphKt(newProcessors, newConnections, newEntries)
+        graph = PipelineGraph(newProcessors, newConnections, newEntries)
         processorStates.remove(name)
         processorDefs.remove(name)
         return true
@@ -151,26 +146,25 @@ class PipelineKt(
      * atomically. Rejects unknown processor names and unknown types.
      * Type override is optional — when null, the current type from
      * [.processorDefs] (or the config loader) is reused. */
-    fun updateProcessorConfig(name: String, type: String, config: MutableMap<String, String>): EditResult {
-        if (registry == null) return EditResult.fail("no registry wired")
+    fun updateProcessorConfig(name: String, type: String?, config: Map<String, String>): EditResult {
         if (name.isEmpty()) return EditResult.fail("name must not be blank")
         val g = graph
         if (!g.processors.containsKey(name)) return EditResult.fail("processor '$name' not found")
 
-        val effectiveType = type.ifEmpty { processorType(name) }
-        if (effectiveType == null || "unknown" == effectiveType) {
+        val effectiveType = type.takeUnless { it == null } ?: processorType(name)
+        if ("unknown" == effectiveType) {
             return EditResult.fail("cannot determine type for '$name' — pass 'type' explicitly")
         }
         if (!registry.has(effectiveType)) {
             return EditResult.fail("unknown processor type '$effectiveType'")
         }
 
-        val cfg = Map.copyOf<String, String>(config)
+        val cfg = config.toMap()
         val rebuilt = registry.create(effectiveType, cfg, context) ?: return EditResult.fail("Could not rebuild processor")
 
-        val newProcessors: MutableMap<String, Processor> = g.processors.toMutableMap()
+        val newProcessors = g.processors.toMutableMap()
         newProcessors[name] = rebuilt
-        graph = PipelineGraphKt.of(newProcessors, g.connections, g.entryPoints)
+        graph = PipelineGraph.of(newProcessors, g.connections, g.entryPoints)
 
         val prior = processorDefs[name]
         val requires = prior?.requires ?: mutableListOf()
@@ -184,14 +178,14 @@ class PipelineKt(
      * `reason` carries a short human-readable explanation so the
      * admin API can echo it. */
     @JvmRecord
-    data class EditResult(@JvmField val ok: Boolean, @JvmField val reason: String?) {
+    data class EditResult(val ok: Boolean, val reason: String = "") {
         companion object {
             fun success(): EditResult {
                 return EditResult(true, "")
             }
 
             fun fail(reason: String?): EditResult {
-                return EditResult(false, reason)
+                return EditResult(false, reason ?: "")
             }
         }
     }
@@ -199,16 +193,16 @@ class PipelineKt(
     /** Add a single outbound connection. Rejects unknown processors on
      * either end and duplicates of an edge that already exists. All
      * other cases build a new graph and swap atomically. */
-    fun addConnection(from: String?, relationship: String?, to: String?): EditResult {
-        if (from.isNullOrEmpty()) return EditResult.fail("from must not be blank")
-        if (relationship.isNullOrEmpty()) return EditResult.fail("relationship must not be blank")
-        if (to.isNullOrEmpty()) return EditResult.fail("to must not be blank")
+    fun addConnection(from: String, relationship: String, to: String): EditResult {
+        if (from.isEmpty()) return EditResult.fail("from must not be blank")
+        if (relationship.isEmpty()) return EditResult.fail("relationship must not be blank")
+        if (to.isEmpty()) return EditResult.fail("to must not be blank")
         val g = graph
         if (!g.processors.containsKey(from)) return EditResult.fail("processor '$from' not found")
         if (!g.processors.containsKey(to)) return EditResult.fail("processor '$to' not found")
 
         val newConnections: ConnectionMap = g.connections.toMutableMap()
-        val newRelationships: RelationshipMap = newConnections.getOrDefault(from, emptyMap()).toMutableMap()
+        val newRelationships: RelationshipMap = newConnections.getOrDefault(from, mutableMapOf()).toMutableMap()
         val targets: MutableList<String> = newRelationships.getOrDefault(relationship, emptyList()).toMutableList()
         if (targets.contains(to)) {
             return EditResult.fail("connection '$from:$relationship → $to' already exists")
@@ -216,7 +210,7 @@ class PipelineKt(
         targets.add(to)
         newRelationships[relationship] = targets.toMutableList()
         newConnections[from] = newRelationships
-        graph = PipelineGraphKt(g.processors, newConnections, g.entryPoints)
+        graph = PipelineGraph(g.processors, newConnections, g.entryPoints)
         return EditResult.success()
     }
 
@@ -242,71 +236,72 @@ class PipelineKt(
         } else {
             newConns[from] = newRels
         }
-        graph = PipelineGraphKt(g.processors, newConns, g.entryPoints)
+        graph = PipelineGraph(g.processors, newConns, g.entryPoints)
         return EditResult.success()
     }
 
     /** Replace every outbound connection of a processor in a single
      * atomic swap. `rels` with an empty map clears the processor's
      * outbound connections entirely. */
-    fun setConnections(from: String?, rels: MutableMap<String?, MutableList<String?>>?): EditResult {
-        var rels = rels
-        if (from == null || from.isEmpty()) return EditResult.fail("from must not be blank")
+    fun setConnections(from: String, relationships: Map<String, List<String>>): EditResult {
+        if (from.isEmpty()) return EditResult.fail("from must not be blank")
         val g = graph
-        if (!g.processors.containsKey(from)) return EditResult.fail("processor '" + from + "' not found")
-        if (rels == null) rels = Map.of<String?, MutableList<String?>?>()
+        if (!g.processors.containsKey(from)) return EditResult.fail("processor '$from' not found")
+
+        val allTargetsContained = relationships.values.flatten().filterNot { g.processors.containsKey(it) }
+        if(allTargetsContained.isNotEmpty()) {
+            val failString = allTargetsContained.joinToString { "target processor '$it' not found" }
+            return EditResult.fail(failString)
+        }
 
         // Validate every target exists before committing.
-        for (targets in rels.values) {
+        for (targets in relationships.values) {
             for (t in targets) {
                 if (!g.processors.containsKey(t)) {
-                    return EditResult.fail("target processor '" + t + "' not found")
+                    return EditResult.fail("target processor '$t' not found")
                 }
             }
         }
 
-        val newConns: MutableMap<String?, MutableMap<String?, MutableList<String?>?>> =
-            HashMap<String?, MutableMap<String?, MutableList<String?>?>>(g.connections)
-        if (rels.isEmpty()) {
-            newConns.remove(from)
+        val newConnections = g.connections.toMutableMap()
+        if (relationships.isEmpty()) {
+            newConnections.remove(from)
         } else {
-            val copy: MutableMap<String?, MutableList<String?>?> = LinkedHashMap<String?, MutableList<String?>?>()
-            rels.forEach { (rel: String?, ts: MutableList<String?>?) -> copy.put(rel, List.copyOf<String?>(ts)) }
-            newConns.put(from, copy)
+            newConnections[from] = relationships.entries.associate { (rel: String, ts: List<String>) -> rel to ts.toMutableList() }
         }
-        graph = PipelineGraphKt(g.processors, newConns, g.entryPoints)
+        graph = PipelineGraph(g.processors, newConnections, g.entryPoints)
         return EditResult.success()
     }
 
     /** Replace the set of entry points. Every name must already be a
      * defined processor; otherwise the update is rejected. */
-    fun setEntryPoints(names: MutableList<String?>?): EditResult {
-        if (names == null) return EditResult.fail("names must not be null")
+    fun setEntryPoints(names: List<String>): EditResult {
+        if (names.isEmpty()) return EditResult.fail("names must not be empty")
         val g = graph
         for (name in names) {
             if (!g.processors.containsKey(name)) {
-                return EditResult.fail("processor '" + name + "' not found")
+                return EditResult.fail("processor '$name' not found")
             }
         }
-        graph = PipelineGraphKt(g.processors, g.connections, List.copyOf<String?>(names))
+        graph = PipelineGraph(g.processors, g.connections, names.toList())
         return EditResult.success()
     }
 
     fun disableProcessor(name: String): Boolean {
         if (!graph.processors.containsKey(name)) return false
-        processorStates.put(name, ComponentState.DISABLED)
+        processorStates[name] = ComponentState.DISABLED
         return true
     }
 
-    fun processorState(name: String?): ComponentState? {
+    fun processorState(name: String): ComponentState {
         if (!graph.processors.containsKey(name)) return ComponentState.DISABLED
         return processorStates.getOrDefault(name, ComponentState.ENABLED)
     }
 
-    fun processorType(name: String?): String? {
-        val d = processorDefs.get(name)
+    fun processorType(name: String): String {
+        val d = processorDefs[name]
         if (d != null) return d.type
-        val p = graph.processors.get(name)
+        val p = graph.processors[name]
         return if (p == null) "unknown" else p.javaClass.getSimpleName()
     }
 
@@ -314,18 +309,17 @@ class PipelineKt(
      * load or API create). Returns an empty map if the processor was
      * added without a recorded def — keeps callers (/api/flow, UI
      * drawer) from having to null-check. */
-    fun processorConfig(name: String?): MutableMap<String?, String?>? {
-        val d = processorDefs.get(name)
-        return if (d == null) Map.of<String?, String?>() else d.config
+    fun processorConfig(name: String): Map<String, String> {
+        val d = processorDefs[name]
+        return d?.config ?: mapOf()
     }
 
     /** Cascade-disable every processor that declared `requires`
      * on the named provider. Called by [.disableProvider]
      * to match the C# semantics — disabling a provider takes down its
      * consumers so they don't try to use it. */
-    fun disableProvider(providerName: String?): Boolean {
-        val p = context.getProvider(providerName)
-        if (p == null) return false
+    fun disableProvider(providerName: String): Boolean {
+        val p = context.getProvider(providerName) ?: return false
         for (proc in context.getDependents(providerName)) {
             disableProcessor(proc)
         }
@@ -334,8 +328,7 @@ class PipelineKt(
     }
 
     fun enableProvider(providerName: String?): Boolean {
-        val p = context.getProvider(providerName)
-        if (p == null) return false
+        val p = context.getProvider(providerName) ?: return false
         p.enable()
         return true
     }
@@ -343,22 +336,21 @@ class PipelineKt(
     // --- Sources ---
     fun addSource(source: Source?) {
         if (source == null) return
-        sources.put(source.name(), source)
+        sources[source.name()] = source
         stats.metrics().onSourceRegistered(source)
     }
 
-    fun getSource(name: String?): Source? {
-        return sources.get(name)
+    fun getSource(name: String): Source? {
+        return sources[name]
     }
 
-    fun sources(): MutableMap<String?, Source?> {
-        return Map.copyOf<String?, Source?>(sources)
+    fun sources(): Map<String, Source> {
+        return sources.toMap()
     }
 
-    fun startSource(name: String?): Boolean {
-        val s = sources.get(name)
-        if (s == null) return false
-        if (!s.isRunning) s.start(Predicate { ff: FlowFile? -> this.ingestFromSource(ff!!) })
+    fun startSource(name: String): Boolean {
+        val s = sources[name] ?: return false
+        if (!s.isRunning) s.start { ff: FlowFile -> this.ingestFromSource(ff) }
         return true
     }
 
@@ -385,34 +377,29 @@ class PipelineKt(
     @JvmRecord
     data class ProcessorDef(
         val type: String,
-        val config: MutableMap<String, String>,
-        val requires: MutableList<String>
+        val config: Map<String, String>,
+        val requires: List<String>
     )
 
     /** Per-processor stats pulled from [Stats], shaped the same way
      * as the C# `GetProcessorStats` endpoint. One entry per
      * processor currently in the graph. */
-    fun processorStats(): MutableMap<String?, MutableMap<String?, Long?>?> {
+    fun processorStats(): Map<String, Map<String, Long>> {
         val counts = stats.processorCountsSnapshot()
         val errors = stats.processorErrorsSnapshot()
-        val out: MutableMap<String?, MutableMap<String?, Long?>?> =
-            LinkedHashMap<String?, MutableMap<String?, Long?>?>()
-        for (name in graph.processors.keys) {
-            out.put(
-                name, Map.of<String?, Long?>(
-                    "processed", counts.getOrDefault(name, 0L),
-                    "errors", errors.getOrDefault(name, 0L)
-                )
+        return graph.processors.keys.associateWith { name ->
+            mapOf(
+                "processed" to counts.getOrDefault(name, 0L),
+                "errors" to errors.getOrDefault(name, 0L)
             )
         }
-        return out
     }
 
     /** Swap the graph atomically. In-flight ingest calls complete against
      * whichever reference they already loaded; subsequent ingests see
      * the new graph. This is the hot-reload hook. */
-    fun swapGraph(next: PipelineGraphKt?) {
-        this.graph = Objects.requireNonNull<PipelineGraphKt>(next)
+    fun swapGraph(next: PipelineGraph) {
+        this.graph = Objects.requireNonNull(next)
     }
 
     /** Diff the current graph against `next` and report
@@ -421,7 +408,7 @@ class PipelineKt(
      * type or a different processor-def recorded; connection changes
      * are tracked per-source. Results inform `/api/reload`'s
      * response so operators can see what actually changed. */
-    fun applyReload(next: PipelineGraphKt): ReloadDiff {
+    fun applyReload(next: PipelineGraph): ReloadDiff {
         val before = this.graph
         var added = 0
         var removed = 0
@@ -441,14 +428,14 @@ class PipelineKt(
             if (before.processors.get(name) !== entry.value) {
                 updated++
             }
-            val oldConns = before.connections.getOrDefault(name, Map.of<String?, MutableList<String?>?>())
-            val newConns = next.connections.getOrDefault(name, Map.of<String?, MutableList<String?>?>())
-            if (oldConns != newConns) {
+            val oldConnections = before.connections.getOrDefault(name, mapOf())
+            val newConnections = next.connections.getOrDefault(name, mapOf())
+            if (oldConnections != newConnections) {
                 connectionsChanged++
             }
         }
 
-        this.graph = Objects.requireNonNull<PipelineGraphKt>(next)
+        this.graph = Objects.requireNonNull(next)
         return ReloadDiff(added, removed, updated, connectionsChanged)
     }
 
@@ -463,7 +450,7 @@ class PipelineKt(
         return stats
     }
 
-    fun graph(): PipelineGraphKt {
+    fun graph(): PipelineGraph {
         return graph
     }
 
@@ -500,9 +487,9 @@ class PipelineKt(
      * entry points. Used by the UI's test-flowfile dialog and targeted
      * replay scenarios. Throws [IllegalArgumentException] if the
      * target isn't in the current graph. */
-    fun ingestAt(ff: FlowFile, target: String?) {
+    fun ingestAt(ff: FlowFile, target: String) {
         val g = graph
-        require(g.processors.containsKey(target)) { "unknown target processor: " + target }
+        require(g.processors.containsKey(target)) { "unknown target processor: $target" }
         val m = stats.metrics()
         m.beginExecution()
         try {
@@ -515,7 +502,7 @@ class PipelineKt(
         }
     }
 
-    private fun drain(g: PipelineGraphKt, stack: Deque<WorkItem>) {
+    private fun drain(g: PipelineGraph, stack: Deque<WorkItem>) {
         val prov = provenanceOrNoop()
         while (!stack.isEmpty()) {
             val item = stack.pop()
@@ -528,21 +515,22 @@ class PipelineKt(
                 )
                 stats.recordFailed(item.processor)
                 prov.record(
-                    input.id, ProvenanceProvider.EventType.FAILED,
-                    item.processor, "maxHops exceeded"
+                    input.id,
+                    ProvenanceProvider.EventType.FAILED,
+                    item.processor,
+                    "maxHops exceeded"
                 )
                 continue
             }
-            val processor = g.processors.get(item.processor)
+            val processor = g.processors[item.processor]
             if (processor == null) {
-                log.error(
-                    "unknown processor '{}' referenced by graph — dropping {}",
-                    item.processor, input.stringId()
-                )
+                log.error( "unknown processor '${item.processor}' referenced by graph — dropping ${input.stringId()}")
                 stats.recordFailed(item.processor)
                 prov.record(
-                    input.id, ProvenanceProvider.EventType.FAILED,
-                    item.processor, "unknown processor"
+                    input.id,
+                    ProvenanceProvider.EventType.FAILED,
+                    item.processor,
+                    "unknown processor"
                 )
                 continue
             }
@@ -583,50 +571,55 @@ class PipelineKt(
     }
 
     private fun dispatch(
-        g: PipelineGraphKt, stack: Deque<WorkItem>,
-        from: String?, result: ProcessorResult
+        graph: PipelineGraph,
+        stack: Deque<WorkItem>,
+        from: String,
+        result: ProcessorResult
     ) {
         when (result) {
-            -> fanOut(g, stack, from, Relationships.SUCCESS, List.of<FlowFile?>(ff.bumpHop()))
-            -> {
-                for (out in ffs) {
-                    fanOut(g, stack, from, Relationships.SUCCESS, List.of<FlowFile?>(out.bumpHop()))
+            is ProcessorResult.Single -> fanOut(graph, stack, from, Relationships.SUCCESS, listOf(result.flowFile.bumpHop()))
+            is ProcessorResult.Multiple -> {
+                for (out in result.flowFiles) {
+                    fanOut(graph, stack, from, Relationships.SUCCESS, listOf(out.bumpHop()))
                 }
             }
 
-            -> fanOut(g, stack, from, route, List.of<FlowFile?>(ff.bumpHop()))
-            -> {
-                for (entry in outputs) {
-                    fanOut(g, stack, from, entry.route, List.of<FlowFile?>(entry.flowFile.bumpHop()))
+            is ProcessorResult.Routed -> fanOut(graph, stack, from, result.route, listOf(result.flowFile.bumpHop()))
+            is ProcessorResult.MultiRouted -> {
+                for (entry in result.outputs) {
+                    fanOut(graph, stack, from, entry.route, listOf(entry.flowFile.bumpHop()))
                 }
             }
 
-            -> stats.recordDropped()
-            -> dispatchFailure(g, stack, from, ff, reason)
+            is ProcessorResult.Dropped -> stats.recordDropped()
+            is ProcessorResult.Failure -> dispatchFailure(graph, stack, from, result.flowFile, result.reason)
         }
     }
 
     private fun dispatchFailure(
-        g: PipelineGraphKt, stack: Deque<WorkItem>,
-        from: String?, ff: FlowFile, reason: String?
+        graph: PipelineGraph,
+        stack: Deque<WorkItem>,
+        from: String,
+        ff: FlowFile,
+        reason: String?
     ) {
-        val failureTargets = g.next(from, Relationships.FAILURE)
+        val failureTargets = graph.next(from, Relationships.FAILURE)
         if (failureTargets.isEmpty()) {
-            log.warn(
-                "failure at '{}' with no 'failure' connections — dropping {} (reason: {})",
-                from, ff.stringId(), reason
-            )
+            log.warn("failure at '$from' with no 'failure' connections — dropping ${ff.stringId()} (reason: $reason)")
             stats.recordDropped()
             return
         }
-        fanOut(g, stack, from, Relationships.FAILURE, List.of<FlowFile?>(ff.bumpHop()))
+        fanOut(graph, stack, from, Relationships.FAILURE, listOf(ff.bumpHop()))
     }
 
     private fun fanOut(
-        g: PipelineGraphKt, stack: Deque<WorkItem>,
-        from: String?, relationship: String?, ffs: MutableList<FlowFile>
+        graph: PipelineGraph,
+        stack: Deque<WorkItem>,
+        from: String,
+        relationship: String,
+        ffs: List<FlowFile>
     ) {
-        val targets = g.next(from, relationship)
+        val targets = graph.next(from, relationship)
         if (targets.isEmpty()) {
             return  // sink / terminal branch
         }
@@ -638,7 +631,7 @@ class PipelineKt(
     }
 
     @JvmRecord
-    private data class WorkItem(val processor: String?, val flowFile: FlowFile)
+    private data class WorkItem(val processor: String, val flowFile: FlowFile)
     companion object {
         private val log: Logger = LoggerFactory.getLogger(Pipeline::class.java)
 

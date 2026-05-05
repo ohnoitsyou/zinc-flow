@@ -52,7 +52,7 @@ sealed class ProcessorResult {
         }
     }
 
-    object Dropped : ProcessorResult() { }
+    class Dropped : ProcessorResult() { }
 
     @ConsistentCopyVisibility
     data class Failure private constructor(val reason: String, val flowFile: FlowFile) : ProcessorResult() {

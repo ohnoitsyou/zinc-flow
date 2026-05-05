@@ -1,7 +1,6 @@
 package zincflow.fabric;
 
 import org.junit.jupiter.api.Test;
-import zincflow.core.Content;
 import zincflow.core.FlowFile;
 import zincflow.core.ProcessorContext;
 import zincflow.core.RawContent;
@@ -25,9 +24,9 @@ final class ConfigLoaderTest {
                         prefix: "[in] "
                 """;
         var graph = new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml);
-        assertEquals(1, graph.processors().size());
+        assertEquals(1, graph.getProcessors().size());
         assertEquals(List.of(), graph.next("ingress", "success"));
-        assertEquals(List.of("ingress"), graph.entryPoints());
+        assertEquals(List.of("ingress"), graph.getEntryPoints());
     }
 
     @Test

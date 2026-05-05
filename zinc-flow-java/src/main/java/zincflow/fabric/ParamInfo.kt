@@ -1,7 +1,5 @@
 package zincflow.fabric
 
-import java.util.List
-
 /** Typed description of a single processor config parameter. Drives the UI
  * form so visual programming can show proper typed inputs instead of raw
  * key/value text boxes.
@@ -12,6 +10,7 @@ import java.util.List
  *  * `defaultValue == ""` → "default is the empty string"
  * 
  * The UI preserves this distinction when seeding form state. */
+// TODO: Fix this to use a delegated constructor of some kind
 class ParamInfo(
     @JvmField val name: String?,
     label: String?,
@@ -20,7 +19,7 @@ class ParamInfo(
     @JvmField val required: Boolean,
     @JvmField val defaultValue: String?,
     @JvmField val placeholder: String?,
-    choices: MutableList<String?>?,
+    choices: List<String>?,
     @JvmField val valueKind: ParamKind?,
     entryDelim: String?,
     pairDelim: String?
@@ -32,7 +31,7 @@ class ParamInfo(
         private var required = false
         private var defaultValue: String? = null
         private var placeholder: String? = null
-        private var choices: MutableList<String?>? = null
+        private var choices: List<String>? = null
         private var valueKind: ParamKind? = null
         private var entryDelim: String? = ";"
         private var pairDelim: String? = "="
@@ -41,59 +40,48 @@ class ParamInfo(
             this.label = name
         }
 
-        fun label(v: String?): Builder {
+        fun label(v: String?): Builder = apply{
             this.label = v
-            return this
         }
 
-        fun description(v: String?): Builder {
-            this.description = if (v == null) "" else v
-            return this
+        fun description(v: String?): Builder = apply {
+            this.description = v ?: ""
         }
 
-        fun kind(v: ParamKind?): Builder {
+        fun kind(v: ParamKind?): Builder = apply {
             this.kind = v
-            return this
         }
 
-        fun required(): Builder {
+        fun required(): Builder = apply {
             this.required = true
-            return this
         }
 
-        fun required(v: Boolean): Builder {
+        fun required(v: Boolean): Builder = apply {
             this.required = v
-            return this
         }
 
-        fun defaultValue(v: String?): Builder {
+        fun defaultValue(v: String?): Builder = apply {
             this.defaultValue = v
-            return this
         }
 
-        fun placeholder(v: String?): Builder {
+        fun placeholder(v: String?): Builder = apply{
             this.placeholder = v
-            return this
         }
 
-        fun choices(vararg v: String?): Builder {
-            this.choices = List.of<String?>(*v)
-            return this
+        fun choices(vararg v: String?): Builder = apply{
+            this.choices = listOfNotNull(*v)
         }
 
-        fun valueKind(v: ParamKind?): Builder {
+        fun valueKind(v: ParamKind?): Builder  = apply {
             this.valueKind = v
-            return this
         }
 
-        fun entryDelim(v: String?): Builder {
+        fun entryDelim(v: String?): Builder = apply {
             this.entryDelim = v
-            return this
         }
 
-        fun pairDelim(v: String?): Builder {
+        fun pairDelim(v: String?): Builder = apply {
             this.pairDelim = v
-            return this
         }
 
         fun build(): ParamInfo {
@@ -102,12 +90,17 @@ class ParamInfo(
                 defaultValue, placeholder, choices, valueKind, entryDelim, pairDelim
             )
         }
+        companion object {
+            operator fun invoke(name: String?): ParamInfo.Builder {
+                return ParamInfo.Builder(name)
+            }
+        }
     }
 
     val label: String?
     val description: String?
     val kind: ParamKind?
-    val choices: MutableList<String?>?
+    val choices: List<String>?
     val entryDelim: String?
     val pairDelim: String?
 
@@ -118,11 +111,11 @@ class ParamInfo(
         var choices = choices
         var entryDelim = entryDelim
         var pairDelim = pairDelim
-        require(!(name == null || name.isEmpty())) { "ParamInfo.name must be non-empty" }
+        require(!name.isNullOrEmpty()) { "ParamInfo.name must be non-empty" }
         if (label == null) label = name
         if (description == null) description = ""
         if (kind == null) kind = ParamKind.STRING
-        if (choices != null) choices = List.copyOf<String?>(choices)
+        if (choices != null) choices = choices.toList()
         if (entryDelim == null) entryDelim = ";"
         if (pairDelim == null) pairDelim = "="
         this.label = label
@@ -137,11 +130,11 @@ class ParamInfo(
         /** Concise builder for the common case. Required-param variant is
          * [.required]. */
         fun of(name: String?): Builder {
-            return ParamInfo.Builder(name)
+            return Builder(name)
         }
 
         fun simple(name: String?): ParamInfo {
-            return ParamInfo.Builder(name).build()
+            return Builder(name).build()
         }
     }
 }

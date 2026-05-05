@@ -30,44 +30,45 @@ class ConvertAvroToRecord(private val schemaName: String, fieldDefs: String) : P
     private val configSchema: Schema? = SchemaDefs.parse(this.schemaName, fieldDefs)
 
     override fun process(ff: FlowFile): ProcessorResult {
-        if (ff.content !is RawContent) {
-            return ProcessorResult.failure(
-                "ConvertAvroToRecord: expected RawContent, got " + ff.content.javaClass.getSimpleName(), ff
+        val content = ff.content
+        if (content !is RawContent) {
+            return ProcessorResult.Failure(
+                "ConvertAvroToRecord: expected RawContent, got " + content.javaClass.getSimpleName(), ff
             )
         }
 
         var schema = configSchema
         if (schema == null) {
-            val attrFields = ff.attributes.get("avro.schema")
+            val attrFields = ff.attributes["avro.schema"]
             if (!attrFields.isNullOrBlank()) {
                 schema = SchemaDefs.parse(schemaName, attrFields)
             }
         }
-        if (schema == null || schema.getFields().isEmpty()) {
-            return ProcessorResult.failure(
+        if (schema == null || schema.fields.isEmpty()) {
+            return ProcessorResult.Failure(
                 "no schema: set 'fields' config or 'avro.schema' attribute", ff
             )
         }
 
         try {
             val reader = GenericDatumReader<GenericRecord?>(schema)
-            val decoder = DecoderFactory.get().binaryDecoder(ByteArrayInputStream(raw.bytes), null)
-            val records = mutableListOf<Map<String, Any?>>()
+            val decoder = DecoderFactory.get().binaryDecoder(ByteArrayInputStream(content.bytes), null)
+            val records = mutableListOf<Map<String, Any>>()
             while (!decoder.isEnd()) {
                 val r = reader.read(null, decoder) ?: continue
                 records.add(AvroConversion.toMap(r))
             }
             if (records.isEmpty()) {
-                return ProcessorResult.failure("no records decoded from Avro binary", ff)
+                return ProcessorResult.Failure("no records decoded from Avro binary", ff)
             }
-            return ProcessorResult.single(
+            return ProcessorResult.Single(
                 ff.withContent(RecordContent(records, schema))
                     .withAttribute("record.count", records.size.toString())
             )
         } catch (_: EOFException) {
-            return ProcessorResult.failure("ConvertAvroToRecord: unexpected EOF mid-record", ff)
+            return ProcessorResult.Failure("ConvertAvroToRecord: unexpected EOF mid-record", ff)
         } catch (ex: IOException) {
-            return ProcessorResult.failure("ConvertAvroToRecord: decode failed — " + ex.message, ff)
+            return ProcessorResult.Failure("ConvertAvroToRecord: decode failed — " + ex.message, ff)
         }
     }
 }

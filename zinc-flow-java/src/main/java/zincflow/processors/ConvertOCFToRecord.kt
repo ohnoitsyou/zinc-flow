@@ -18,29 +18,30 @@ import java.io.IOException
  * without duplicating schema config. */
 class ConvertOCFToRecord : Processor {
     override fun process(ff: FlowFile): ProcessorResult {
-        if (ff.content !is RawContent) {
-            return ProcessorResult.failure(
-                "ConvertOCFToRecord: expected RawContent, got " + ff.content.javaClass.getSimpleName(), ff
-            )
+        val content = ff.content
+        if (content !is RawContent) {
+            return ProcessorResult.Failure("ConvertOCFToRecord: expected RawContent, got ${content.javaClass.getSimpleName()}", ff)
         }
         val reader = GenericDatumReader<GenericRecord?>()
         try {
-            DataFileReader<GenericRecord?>(SeekableByteArrayInput(raw.bytes), reader).use { file ->
-                val records: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+            DataFileReader<GenericRecord?>(SeekableByteArrayInput(content.bytes), reader).use { file ->
+                val records = mutableListOf<Map<String, Any>>()
                 var record: GenericRecord? = null
                 while (file.hasNext()) {
                     record = file.next(record) // reuse instance for perf
-                    records.add(AvroConversion.toMap(record))
+                    if (record != null) {
+                        records.add(AvroConversion.toMap(record))
+                    }
                 }
-                val schemaJson: String? = file.getSchema().toString()
-                return ProcessorResult.single(
+                val schemaJson: String = file.schema.toString()
+                return ProcessorResult.Single(
                     ff.withContent(RecordContent(records))
                         .withAttribute("record.count", records.size.toString())
                         .withAttribute("avro.schema", schemaJson)
                 )
             }
         } catch (ex: IOException) {
-            return ProcessorResult.failure("ConvertOCFToRecord: read failed — " + ex.message, ff)
+            return ProcessorResult.Failure("ConvertOCFToRecord: read failed — $ex", ff)
         }
     }
 }

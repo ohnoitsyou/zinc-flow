@@ -16,25 +16,26 @@ import java.nio.charset.StandardCharsets
  * fans back to HTTP APIs that don't accept arrays). */
 class ConvertRecordToJSON @JvmOverloads constructor(private val singleObject: Boolean = false) : Processor {
     override fun process(ff: FlowFile): ProcessorResult {
-        if (ff.content !is RecordContent) {
-            return ProcessorResult.failure(
-                "ConvertRecordToJSON: expected RecordContent, got " + ff.content.javaClass.getSimpleName(), ff
+        val content = ff.content
+        if (content !is RecordContent) {
+            return ProcessorResult.Failure(
+                "ConvertRecordToJSON: expected RecordContent, got " + content.javaClass.getSimpleName(), ff
             )
         }
         try {
             val bytes: ByteArray?
             if (singleObject) {
-                if (rc.records.isEmpty()) {
+                if (content.records.isEmpty()) {
                     bytes = "{}".toByteArray(StandardCharsets.UTF_8)
                 } else {
-                    bytes = MAPPER.writeValueAsBytes(rc.records.getFirst())
+                    bytes = MAPPER.writeValueAsBytes(content.records.first())
                 }
             } else {
-                bytes = MAPPER.writeValueAsBytes(rc.records)
+                bytes = MAPPER.writeValueAsBytes(content.records)
             }
-            return ProcessorResult.single(ff.withContent(RawContent(bytes)))
+            return ProcessorResult.Single(ff.withContent(RawContent(bytes)))
         } catch (ex: JsonProcessingException) {
-            return ProcessorResult.failure("ConvertRecordToJSON: serialize failed — " + ex.message, ff)
+            return ProcessorResult.Failure("ConvertRecordToJSON: serialize failed — " + ex.message, ff)
         }
     }
 

@@ -37,7 +37,7 @@ final class ProcessorTypesHttpTest {
                 java.util.List.of("success", "failure", "skipped")),
                 (cfg, ctx) -> ff -> ProcessorResult.dropped());
 
-        var pipeline = new Pipeline(PipelineGraphKt.empty(), Pipeline.DEFAULT_MAX_HOPS, null,
+        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null,
                 new ProcessorContext(), registry);
         server = new HttpServer(pipeline).start(0);
     }

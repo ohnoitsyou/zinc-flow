@@ -21,8 +21,8 @@ object FlowValidator {
      * on sink processors declared but never wired); `connections`
      * maps `fromProcessor → relationship → [target,...]`. */
     fun validate(
-        processorNames: MutableCollection<String>,
-        connections: MutableMap<String, MutableMap<String, List<String>>>
+        processorNames: Collection<String>,
+        connections: Map<String, Map<String, List<String>>>
     ): Result {
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()

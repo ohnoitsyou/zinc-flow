@@ -25,23 +25,18 @@ import java.nio.charset.StandardCharsets
  * When absent, a string-typed schema is inferred from the
  * header row or the `hasHeader=false` raw shape. */
 class ConvertCSVToRecord @JvmOverloads constructor(
-    schemaName: String? = "",
+    private val schemaName: String = "",
     private val delimiter: Char = ',',
     private val hasHeader: Boolean = true,
-    fieldDefs: String? = ""
+    fieldDefs: String = ""
 ) : Processor {
-    private val schemaName: String
-    private val explicitSchema: Schema?
-
-    init {
-        this.schemaName = if (schemaName == null) "" else schemaName
-        this.explicitSchema = SchemaDefs.parse(this.schemaName, fieldDefs)
-    }
+    private val explicitSchema: Schema? = SchemaDefs.parse(this.schemaName, fieldDefs)
 
     override fun process(ff: FlowFile): ProcessorResult {
-        if (ff.content !is RawContent) {
-            return ProcessorResult.failure(
-                "ConvertCSVToRecord: expected RawContent, got " + ff.content.javaClass.getSimpleName(), ff
+        val content = ff.content
+        if (content !is RawContent) {
+            return ProcessorResult.Failure(
+                "ConvertCSVToRecord: expected RawContent, got " + content.javaClass.getSimpleName(), ff
             )
         }
         var sb = CsvSchema.builder().setColumnSeparator(delimiter)
@@ -54,20 +49,20 @@ class ConvertCSVToRecord @JvmOverloads constructor(
         val csvSchema = sb.build()
 
         try {
-            val text = String(raw.bytes, StandardCharsets.UTF_8)
-            val it: MappingIterator<MutableMap<String?, Any?>?> = MAPPER
+            val text = String(content.bytes, StandardCharsets.UTF_8)
+            val it: MappingIterator<MutableMap<String, Any>> = MAPPER
                 .readerFor(MutableMap::class.java)
                 .with(csvSchema)
-                .readValues<MutableMap<String?, Any?>?>(text)
-            val records: MutableList<MutableMap<String?, Any?>?> = ArrayList<MutableMap<String?, Any?>?>()
+                .readValues(text)
+            val records = mutableListOf<MutableMap<String, Any>>()
             while (it.hasNext()) records.add(it.next())
-            val effective = if (explicitSchema != null) explicitSchema else inferStringSchema(records)
-            return ProcessorResult.single(
+            val effective = explicitSchema ?: inferStringSchema(records)
+            return ProcessorResult.Single(
                 ff.withContent(RecordContent(records, effective))
                     .withAttribute("record.count", records.size.toString())
             )
         } catch (ex: IOException) {
-            return ProcessorResult.failure("ConvertCSVToRecord: parse failed — " + ex.message, ff)
+            return ProcessorResult.Failure("ConvertCSVToRecord: parse failed — " + ex.message, ff)
         }
     }
 
@@ -75,16 +70,16 @@ class ConvertCSVToRecord @JvmOverloads constructor(
      * explicit field defs were provided. CSV values land as strings
      * (no type inference without a schema hint) so this is a faithful
      * representation of what's in the RecordContent. */
-    private fun inferStringSchema(records: MutableList<MutableMap<String?, Any?>?>): Schema? {
+    private fun inferStringSchema(records: MutableList<MutableMap<String, Any>>): Schema? {
         if (records.isEmpty()) return null
         val defs = StringBuilder()
         var first = true
-        for (key in records.getFirst().keys) {
+        for (key in records.first().keys) {
             if (!first) defs.append(',')
             defs.append(key).append(":string")
             first = false
         }
-        val name = if (schemaName.isEmpty()) "CsvRecord" else schemaName
+        val name = schemaName.ifEmpty { "CsvRecord" }
         return SchemaDefs.parse(name, defs.toString())
     }
 
