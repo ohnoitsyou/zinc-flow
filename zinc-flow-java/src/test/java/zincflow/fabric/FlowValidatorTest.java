@@ -17,8 +17,8 @@ final class FlowValidatorTest {
                         "a", Map.of("success", List.of("b")),
                         "b", Map.of("success", List.of("c"))));
         assertTrue(r.ok());
-        assertTrue(r.warnings().isEmpty());
-        assertEquals(List.of("a"), r.entryPoints());
+        assertTrue(r.getWarnings().isEmpty());
+        assertEquals(List.of("a"), r.getEntryPoints());
     }
 
     @Test
@@ -27,7 +27,7 @@ final class FlowValidatorTest {
                 List.of("a"),
                 Map.of("a", Map.of("success", List.of("ghost"))));
         assertFalse(r.ok());
-        assertTrue(r.errors().stream().anyMatch(e -> e.contains("ghost")));
+        assertTrue(r.getErrors().stream().anyMatch(e -> e.contains("ghost")));
     }
 
     @Test
@@ -39,8 +39,8 @@ final class FlowValidatorTest {
                         "b", Map.of("success", List.of("c")),
                         "c", Map.of("success", List.of("a"))));
         assertTrue(r.ok(), "cycles are warnings, not errors");
-        assertTrue(r.warnings().stream().anyMatch(w -> w.startsWith("cycle detected")),
-                "expected cycle warning, got " + r.warnings());
+        assertTrue(r.getWarnings().stream().anyMatch(w -> w.startsWith("cycle detected")),
+                "expected cycle warning, got " + r.getWarnings());
     }
 
     @Test
@@ -52,9 +52,9 @@ final class FlowValidatorTest {
         // entry has no inbound = entry point; island has no inbound = also
         // an entry point. No unreachable warning since both are entry
         // points. This verifies the definition is "no inbound edges".
-        assertEquals(2, r.entryPoints().size());
-        assertTrue(r.entryPoints().contains("entry"));
-        assertTrue(r.entryPoints().contains("island"));
+        assertEquals(2, r.getEntryPoints().size());
+        assertTrue(r.getEntryPoints().contains("entry"));
+        assertTrue(r.getEntryPoints().contains("island"));
     }
 
     @Test
@@ -67,8 +67,8 @@ final class FlowValidatorTest {
                         "a", Map.of(),
                         "b", Map.of("success", List.of("c")),
                         "c", Map.of("success", List.of("b"))));
-        assertTrue(r.warnings().stream().anyMatch(w -> w.contains("not reachable")),
-                "expected unreachable warning, got " + r.warnings());
+        assertTrue(r.getWarnings().stream().anyMatch(w -> w.contains("not reachable")),
+                "expected unreachable warning, got " + r.getWarnings());
     }
 
     @Test
@@ -80,8 +80,8 @@ final class FlowValidatorTest {
                                 "high", List.of("high"),
                                 "low",  List.of("low"))));
         assertTrue(r.ok());
-        assertTrue(r.warnings().isEmpty());
-        assertEquals(List.of("router"), r.entryPoints());
+        assertTrue(r.getWarnings().isEmpty());
+        assertEquals(List.of("router"), r.getEntryPoints());
     }
 
     @Test
@@ -91,7 +91,7 @@ final class FlowValidatorTest {
                 Map.of("a", Map.of(
                         "success", List.of("ghost1", "ghost2"),
                         "failure", List.of("ghost3"))));
-        assertEquals(3, r.errors().size(),
+        assertEquals(3, r.getErrors().size(),
                 "every unknown target should surface, not just the first");
     }
 
@@ -99,7 +99,7 @@ final class FlowValidatorTest {
     void emptyGraphValidates() {
         var r = FlowValidator.validate(List.of(), Map.of());
         assertTrue(r.ok());
-        assertTrue(r.warnings().isEmpty());
-        assertTrue(r.entryPoints().isEmpty());
+        assertTrue(r.getWarnings().isEmpty());
+        assertTrue(r.getEntryPoints().isEmpty());
     }
 }

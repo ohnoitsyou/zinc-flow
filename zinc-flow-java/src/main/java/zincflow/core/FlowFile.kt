@@ -50,7 +50,7 @@ data class FlowFile private constructor(
 
         /** Create a new FlowFile with a fresh sequence id and current-time
          * timestamp, from raw bytes + attribute map. */
-        fun create(bytes: ByteArray, attributes: MutableMap<String, String> = mutableMapOf()): FlowFile {
+        fun create(bytes: ByteArray, attributes: Map<String, String> = mapOf()): FlowFile {
             return FlowFile(
                 ID_SEQ.incrementAndGet(),
                 attributes,
@@ -61,7 +61,7 @@ data class FlowFile private constructor(
         }
 
         /** Create a new FlowFile with explicit Content (not necessarily raw). */
-        fun create(content: Content, attributes: MutableMap<String, String>): FlowFile {
+        fun create(content: Content, attributes: Map<String, String> = mapOf()): FlowFile {
             return FlowFile(
                 ID_SEQ.incrementAndGet(),
                 attributes,

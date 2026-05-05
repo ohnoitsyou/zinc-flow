@@ -9,7 +9,6 @@ import zincflow.core.Processor
 import zincflow.core.ProcessorResult
 import zincflow.core.RecordContent
 import zincflow.core.Relationships
-import java.util.List
 
 /** Filters RecordContent by a JsonPath predicate (Jayway JsonPath). The
  * query is applied to the full record list, and the matching subset
@@ -23,64 +22,56 @@ import java.util.List
  * Example query (records where `priority == "high"`):
  * `$[?(@.priority == 'high')]` */
 class QueryRecord(jsonPathQuery: String) : Processor {
-    private val compiled: JsonPath
-
-    init {
-        require(!(jsonPathQuery == null || jsonPathQuery.isEmpty())) { "QueryRecord: jsonPath query must not be blank" }
-        try {
-            this.compiled = JsonPath.compile(jsonPathQuery)
-        } catch (ex: RuntimeException) {
-            throw IllegalArgumentException(
-                "QueryRecord: invalid JsonPath — " + ex.message, ex
-            )
-        }
-    }
+    private val compiled: JsonPath = jsonPathQuery.takeIf { it.isNotBlank() }?.let {
+        JsonPath.compile(it)
+    } ?: throw IllegalArgumentException("QueryRecord: invalid JsonPath — Must not be blank")
 
     override fun process(ff: FlowFile): ProcessorResult {
-        if (ff.content !is RecordContent) {
-            return ProcessorResult.failure(
-                "QueryRecord: expected RecordContent, got " + ff.content.javaClass.getSimpleName(), ff
-            )
+        val content = ff.content
+        if (content !is RecordContent) {
+            return ProcessorResult.Failure("QueryRecord: expected RecordContent, got ${content.javaClass.getSimpleName()}", ff)
         }
         try {
-            val result: Any? = compiled.read<Any?>(rc.records, CONFIG)
-            val matches: MutableList<MutableMap<String?, Any?>?> = normalise(result)
+            val result: Any = compiled.read(content.records, CONFIG)
+            val matches: List<Map<String, Any>> = normalise(result)
             if (matches.isEmpty()) {
-                return ProcessorResult.routed(Relationships.UNMATCHED, ff)
+                return ProcessorResult.Routed(Relationships.UNMATCHED, ff)
             }
-            return ProcessorResult.routed(
+            return ProcessorResult.Routed(
                 Relationships.MATCHED,
-                ff.withContent(RecordContent(matches, rc.schema))
+                ff.withContent(RecordContent(matches, content.schema))
             )
-        } catch (ex: PathNotFoundException) {
+        } catch (_: PathNotFoundException) {
             // With SUPPRESS_EXCEPTIONS this usually becomes an empty result,
             // but some malformed paths still throw — treat as no match.
-            return ProcessorResult.routed(Relationships.UNMATCHED, ff)
+            return ProcessorResult.Routed(Relationships.UNMATCHED, ff)
         } catch (ex: RuntimeException) {
-            return ProcessorResult.failure("QueryRecord: query failed — " + ex.message, ff)
+            return ProcessorResult.Failure("QueryRecord: query failed — " + ex.message, ff)
         }
     }
 
     companion object {
         // Default-safe JsonPath config: suppress exceptions on missing paths
         // so a mismatched record just doesn't match rather than blowing up.
-        private val CONFIG: Configuration? = Configuration.defaultConfiguration()
+        private val CONFIG: Configuration = Configuration.defaultConfiguration()
             .addOptions(Option.SUPPRESS_EXCEPTIONS)
 
-        private fun normalise(jsonPathResult: Any?): MutableList<MutableMap<String?, Any?>?> {
-            if (jsonPathResult == null) return mutableListOf<MutableMap<String?, Any?>?>()
-            if (jsonPathResult is MutableList<*>) {
-                val out: MutableList<MutableMap<String?, Any?>?> =
-                    ArrayList<MutableMap<String?, Any?>?>(jsonPathResult.size)
-                for (item in jsonPathResult) {
-                    if (item is MutableMap<*, *>) out.add(item as MutableMap<String?, Any?>)
+
+        private fun normalise(jsonPathResult: Any?): List<Map<String, Any>> {
+            return when (jsonPathResult) {
+                null -> emptyList()
+                is Map<*, *> -> listOf(jsonPathResult.entries.associate {(key, value) ->  key.toString() to value as Any })
+                is List<*> -> {
+                    buildList {
+                        for (item in jsonPathResult) {
+                            if (item is Map<*, *>) {
+                                add(item.entries.associate { (k, v) -> k.toString() to v as Any })
+                            }
+                        }
+                    }
                 }
-                return out
+                else -> emptyList()
             }
-            if (jsonPathResult is MutableMap<*, *>) {
-                return List.of<MutableMap<String?, Any?>?>(jsonPathResult as MutableMap<String?, Any?>)
-            }
-            return mutableListOf<MutableMap<String?, Any?>?>()
         }
     }
 }

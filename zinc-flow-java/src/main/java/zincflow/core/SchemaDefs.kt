@@ -22,30 +22,27 @@ object SchemaDefs {
         val name = recordName.ifBlank { "Record" }
         var assembler = SchemaBuilder.record(name).namespace("zincflow").fields()
 
-        for (part in fieldDefs.split(",").dropLastWhile { it.isEmpty() }) {
-            val trimmed = part.trim()
-            if (trimmed.isEmpty()) continue
-            require(trimmed.contains(':')) { "ConvertAvroToRecord: malformed field def '$trimmed' — expected 'name:type'" }
-            val fname = trimmed.substringBefore(':').trim()
-            val ftype = trimmed.substringAfter(':').trim().lowercase(Locale.getDefault())
+        for (part in fieldDefs.split(",").mapNotNull { f -> f.trim().takeIf { it.isNotEmpty() }}) {
+            require(part.contains(':')) { "ConvertAvroToRecord: malformed field def '$part' — expected 'name:type'" }
+            val name = part.substringBefore(':').trim()
+            val type = part.substringAfter(':').trim().lowercase(Locale.getDefault())
 
-            assembler = appendField(assembler, fname, ftype)
+            assembler = appendField(assembler, name, type)
         }
         return assembler.endRecord()
     }
 
-    private fun appendField(a: FieldAssembler<Schema>, fname: String, ftype: String): FieldAssembler<Schema> {
-        return when (ftype) {
-            "boolean", "bool" -> a.name(fname).type().booleanType().noDefault()
-            "int", "int32" -> a.name(fname).type().intType().noDefault()
-            "long", "int64" -> a.name(fname).type().longType().noDefault()
-            "float", "float32" -> a.name(fname).type().floatType().noDefault()
-            "double", "float64" -> a.name(fname).type().doubleType().noDefault()
-            "bytes" -> a.name(fname).type().bytesType().noDefault()
-            "string" -> a.name(fname).type().stringType().noDefault()
+    private fun appendField(a: FieldAssembler<Schema>, name: String, type: String): FieldAssembler<Schema> {
+        return when (type) {
+            "boolean", "bool" -> a.name(name).type().booleanType().noDefault()
+            "int", "int32" -> a.name(name).type().intType().noDefault()
+            "long", "int64" -> a.name(name).type().longType().noDefault()
+            "float", "float32" -> a.name(name).type().floatType().noDefault()
+            "double", "float64" -> a.name(name).type().doubleType().noDefault()
+            "bytes" -> a.name(name).type().bytesType().noDefault()
+            "string" -> a.name(name).type().stringType().noDefault()
             else -> throw IllegalArgumentException(
-                ("ConvertAvroToRecord: unknown field type '" + ftype + "' in '" + fname + ":" + ftype
-                        + "' — valid: boolean, int, long, float, double, bytes, string")
+                "ConvertAvroToRecord: unknown field type '$type' in '$name:$type' — valid: boolean, int, long, float, double, bytes, string"
             )
         }
     }

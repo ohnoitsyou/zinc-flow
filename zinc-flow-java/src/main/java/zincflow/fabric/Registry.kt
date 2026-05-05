@@ -98,6 +98,7 @@ class Registry {
         registerBuiltins()
     }
 
+    @JvmOverloads
     fun register(type: String, version: String = TypeRefs.DEFAULT_VERSION, factory: Factory) {
         register(TypeInfo(type, version, "", mutableListOf(), mutableListOf()), factory)
     }
@@ -132,6 +133,7 @@ class Registry {
      * [ProcessorContext] handy (e.g. ad-hoc tests) get an empty
      * one. Factories that actually consume the context will surface
      * their own error. */
+    @JvmOverloads
     fun create(
         type: String,
         config: Map<String, String>,

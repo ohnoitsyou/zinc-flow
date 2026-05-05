@@ -12,14 +12,10 @@ import kotlin.concurrent.Volatile
  * for free — logs are suppressed when the provider is disabled, which
  * matches zinc-flow-csharp's "turn off chatty logging in prod" model. */
 class LoggingProvider : Provider {
-    private val rootLogger: Logger
+    private val rootLogger: Logger = LoggerFactory.getLogger("zincflow")
 
     @Volatile
     private var state = ComponentState.DISABLED
-
-    init {
-        this.rootLogger = LoggerFactory.getLogger("zincflow")
-    }
 
     override fun name(): String {
         return NAME
@@ -45,24 +41,24 @@ class LoggingProvider : Provider {
         state = ComponentState.DISABLED
     }
 
-    fun logger(child: String?): Logger {
-        return LoggerFactory.getLogger("zincflow." + (if (child == null) "app" else child))
+    fun logger(child: String = "app"): Logger {
+        return LoggerFactory.getLogger("zincflow.${child}")
     }
 
     /** Gated info log — drops when disabled. Use for high-volume,
      * processor-level diagnostics that should be toggle-able. */
-    fun info(processor: String?, msg: String?, context: MutableMap<String?, *>?) {
-        if (!isEnabled()) return
+    fun info(processor: String?, msg: String?, context: Map<String, Any> = mapOf()) {
+        if (!isEnabled) return
         rootLogger.info("proc={} msg={} ctx={}", processor, msg, context)
     }
 
-    fun warn(processor: String?, msg: String?, context: MutableMap<String?, *>?) {
-        if (!isEnabled()) return
+    fun warn(processor: String?, msg: String?, context: Map<String, Any> = mapOf()) {
+        if (!isEnabled) return
         rootLogger.warn("proc={} msg={} ctx={}", processor, msg, context)
     }
 
     fun error(processor: String?, msg: String?, cause: Throwable?) {
-        if (!isEnabled()) return
+        if (!isEnabled) return
         rootLogger.error("proc={} msg={}", processor, msg, cause)
     }
 
@@ -75,7 +71,7 @@ class LoggingProvider : Provider {
             return "Structured logging facade over slf4j."
         }
 
-        override fun create(config: MutableMap<String?, Any?>?): Provider {
+        override fun create(config: Map<String, Any>): Provider {
             return LoggingProvider()
         }
     }

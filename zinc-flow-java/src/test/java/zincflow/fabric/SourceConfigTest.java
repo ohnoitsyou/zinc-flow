@@ -37,8 +37,8 @@ final class SourceConfigTest {
 
         List<Source> built = loader.lastSources();
         assertEquals(1, built.size());
-        assertEquals("heartbeat", built.get(0).name());
-        assertEquals(GenerateFlowFile.TYPE, built.get(0).sourceType());
+        assertEquals("heartbeat", built.getFirst().name());
+        assertEquals(GenerateFlowFile.TYPE, built.getFirst().sourceType());
     }
 
     @Test

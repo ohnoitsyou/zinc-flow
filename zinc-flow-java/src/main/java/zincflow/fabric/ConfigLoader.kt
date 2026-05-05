@@ -63,7 +63,7 @@ flow:
     a:
       success: [b]
  */
-class ConfigLoader(
+class ConfigLoader @JvmOverloads constructor(
     private val registry: Registry,
     context: ProcessorContext? = ProcessorContext(),
     private val sourceRegistry: SourceRegistry? = null,

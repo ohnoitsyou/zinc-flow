@@ -15,11 +15,9 @@ import kotlin.concurrent.Volatile
  * share one store per Fabric. The provider name is parameterized so
  * multiple stores (in-memory for small-payload pipelines, on-disk for
  * large-payload pipelines) can coexist under distinct names. */
-class ContentProvider(private val name: String, private val store: ContentStore) : Provider {
+class ContentProvider @JvmOverloads constructor(private val name: String = NAME, private val store: ContentStore) : Provider {
     @Volatile
     private var state = ComponentState.DISABLED
-
-    constructor(store: ContentStore) : this(NAME, store)
 
     init {
         require(name.isNotEmpty()) { "name must not be blank" }
@@ -64,24 +62,24 @@ class ContentProvider(private val name: String, private val store: ContentStore)
             return "FlowFile content store (memory or disk-backed)."
         }
 
-        override fun configKeys(): MutableList<String?> {
-            return mutableListOf<String?>("store", "directory")
+        override fun configKeys(): List<String> {
+            return listOf("store", "directory")
         }
 
-        override fun create(config: MutableMap<String?, Any>): Provider {
-            val kind: String? = if (config.get("store") == null) "memory" else config.get("store").toString()
+        override fun create(config: Map<String, Any>): Provider {
+            val kind: String = if (config["store"] == null) "memory" else config["store"].toString()
             if ("file".equals(kind, ignoreCase = true)) {
-                val dir: Any = config.get("directory")!!
+                val dir: Any? = config["directory"]
                 requireNotNull(dir) { "ContentProvider: file store requires 'directory'" }
                 try {
-                    return ContentProvider(FileContentStore(Path.of(dir.toString())))
+                    return ContentProvider(FileContentStore.NAME, FileContentStore(Path.of(dir.toString())))
                 } catch (ex: IOException) {
                     throw IllegalStateException(
-                        "ContentProvider: failed to init file store at " + dir, ex
+                        "ContentProvider: failed to init file store at $dir", ex
                     )
                 }
             }
-            return ContentProvider(MemoryContentStore())
+            return ContentProvider(MemoryContentStore.NAME, MemoryContentStore())
         }
     }
 

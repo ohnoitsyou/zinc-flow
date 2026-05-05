@@ -26,29 +26,28 @@ import kotlin.concurrent.Volatile
  * having v1, v2, v3, the remaining versions stay v1 + v3. */
 class SchemaRegistryProvider : Provider {
     /** Immutable record of a registered schema. */
-    @JvmRecord
-    data class Schema(@JvmField val id: Int, @JvmField val subject: String?, @JvmField val version: Int, @JvmField val definition: String?) {
+    data class Schema(val id: Int, val subject: String, val version: Int, val definition: String) {
         init {
-            require(!(subject == null || subject.isEmpty())) { "schema subject must not be blank" }
+            require(subject.isNotEmpty()) { "schema subject must not be blank" }
             require(version >= 1) { "schema version must be >= 1" }
             require(id >= 1) { "schema id must be >= 1" }
-            requireNotNull(definition) { "schema definition must not be null" }
+            require(definition.isNotBlank()) { "schema definition must not be blank" }
         }
     }
 
     /** Map from subject → ordered list of [Schema]. Concurrent
      * access uses a per-subject monitor (the [List] itself) so
      * registrations under different subjects don't contend. */
-    private val bySubject = ConcurrentHashMap<String?, MutableList<Schema>>()
+    private val bySubject = ConcurrentHashMap<String, MutableList<Schema>>()
 
     /** Definition text → global id. Lets us dedupe schemas across
      * subjects and give back stable ids. */
-    private val idByDefinition = ConcurrentHashMap<String?, Int?>()
+    private val idByDefinition = ConcurrentHashMap<String, Int>()
 
     /** Global id → one representative Schema record (for id-based
      * lookup). The record's subject/version reflect the first
      * subject that registered the definition. */
-    private val byId = ConcurrentHashMap<Int?, Schema?>()
+    private val byId = ConcurrentHashMap<Int, Schema>()
     private val nextId = AtomicInteger()
 
     @Volatile
@@ -86,8 +85,8 @@ class SchemaRegistryProvider : Provider {
      * the existing global id is reused; the subject still gets a new
      * per-subject version entry so its history is preserved. */
     fun register(subject: String, definition: String): Schema {
-        require(!(subject == null || subject.isEmpty())) { "subject must not be blank" }
-        requireNotNull(definition) { "definition must not be null" }
+        require(subject.isNotBlank()) { "subject must not be blank" }
+        require(definition.isNotBlank()) { "definition must not be blank" }
 
         // Short-circuit: same definition already present under the same
         // subject → return the existing entry rather than bumping to
@@ -95,67 +94,53 @@ class SchemaRegistryProvider : Provider {
         val existing = findBySubjectAndDefinition(subject, definition)
         if (existing != null) return existing
 
-        val id = idByDefinition.computeIfAbsent(definition) { `_`: kotlin.String? -> nextId.incrementAndGet() }!!
-        val versions = bySubject.computeIfAbsent(subject) { `_`: String? ->
-            Collections.synchronizedList<Schema?>(
-                ArrayList<Schema?>()
-            )
+        val id = idByDefinition.computeIfAbsent(definition) { nextId.incrementAndGet() }
+        val versions = bySubject.computeIfAbsent(subject) {
+            Collections.synchronizedList(ArrayList<Schema>())
         }
-        val registered: Schema
-        synchronized(versions) {
+        val registered = synchronized(versions) {
             val nextVersion = if (versions.isEmpty()) 1 else versions.get(versions.size - 1).version + 1
-            registered = Schema(id, subject, nextVersion, definition)
-            versions.add(registered)
+            Schema(id, subject, nextVersion, definition).also { versions.add(it) }
         }
         byId.putIfAbsent(id, registered)
         return registered
     }
 
-    private fun findBySubjectAndDefinition(subject: String?, definition: String?): Schema? {
-        val versions = bySubject.get(subject)
-        if (versions == null) return null
-        synchronized(versions) {
-            for (s in versions) {
-                if (s.definition == definition) return s
-            }
-        }
-        return null
-    }
-
-    fun getById(id: Int): Optional<Schema?> {
-        return Optional.ofNullable<Schema?>(byId.get(id))
-    }
-
-    fun getEntry(subject: String?, version: Int): Optional<Schema?> {
-        val versions = bySubject.get(subject)
-        if (versions == null) return Optional.empty<Schema?>()
-        synchronized(versions) {
-            for (s in versions) if (s.version == version) return Optional.of<Schema?>(s)
-        }
-        return Optional.empty<Schema?>()
-    }
-
-    fun latest(subject: String?): Optional<Schema?> {
-        val versions = bySubject.get(subject)
-        if (versions == null) return Optional.empty<Schema?>()
-        synchronized(versions) {
-            return if (versions.isEmpty()) Optional.empty<Schema?>() else Optional.of<Schema?>(versions.get(versions.size - 1))
+    private fun findBySubjectAndDefinition(subject: String, definition: String): Schema? {
+        val versions = bySubject[subject] ?: return null
+        return synchronized(versions) {
+            versions.firstOrNull { it.definition == definition }
         }
     }
 
-    fun listSubjects(): MutableList<String?> {
-        val out: MutableList<String?> = ArrayList<String?>(bySubject.keys)
-        Collections.sort<String?>(out)
-        return out
+    fun getById(id: Int): Optional<Schema> {
+        return Optional.ofNullable<Schema>(byId[id])
     }
 
-    fun listVersions(subject: String?): MutableList<Int?> {
-        val versions = bySubject.get(subject)
-        if (versions == null) return mutableListOf<Int?>()
-        synchronized(versions) {
-            val out: MutableList<Int?> = ArrayList<Int?>(versions.size)
-            for (s in versions) out.add(s.version)
-            return out
+    fun getEntry(subject: String?, version: Int): Optional<Schema> {
+        val versions = bySubject[subject] ?: return Optional.empty<Schema>()
+        val item = synchronized(versions) {
+            versions.firstOrNull { it.version == version }
+        }
+        return Optional.ofNullable(item)
+    }
+
+    fun latest(subject: String): Optional<Schema> {
+        val versions = bySubject[subject] ?: return Optional.empty<Schema>()
+        if(versions.isEmpty()) return Optional.empty<Schema>()
+        return synchronized(versions) {
+            Optional.of<Schema>(versions.last())
+        }
+    }
+
+    fun listSubjects(): List<String> {
+        return bySubject.keys.sorted()
+    }
+
+    fun listVersions(subject: String): List<Int> {
+        val versions = bySubject[subject] ?: return listOf()
+        return synchronized(versions) {
+            versions.map { it.version }
         }
     }
 
@@ -163,30 +148,26 @@ class SchemaRegistryProvider : Provider {
      * version numbers that were removed (so the HTTP layer can echo
      * them back the way Confluent does). Returns empty when the
      * subject is unknown. */
-    fun deleteSubject(subject: String): MutableList<Int?> {
-        val versions = bySubject.remove(subject)
-        if (versions == null) return mutableListOf<Int?>()
-        synchronized(versions) {
-            val removed: MutableList<Int?> = ArrayList<Int?>(versions.size)
-            for (s in versions) removed.add(s.version)
-            return removed
+    fun deleteSubject(subject: String): List<Int> {
+        val versions = bySubject.remove(subject) ?: return listOf()
+        return synchronized(versions) {
+            versions.map { it.version }
         }
     }
 
     fun deleteVersion(subject: String?, version: Int): Boolean {
-        val versions = bySubject.get(subject)
-        if (versions == null) return false
-        synchronized(versions) {
-            return versions.removeIf { s: Schema? -> s!!.version == version }
+        val versions = bySubject[subject] ?: return false
+        return synchronized(versions) {
+            versions.removeIf { it.version == version }
         }
     }
 
     /** Snapshot for diagnostics — returns a subject → versions map
      * that's safe to iterate without holding the per-subject lock. */
-    fun snapshot(): MutableMap<String?, MutableList<Int?>?> {
-        val out: MutableMap<String?, MutableList<Int?>?> = LinkedHashMap<String?, MutableList<Int?>?>()
-        for (subject in listSubjects()) out.put(subject, listVersions(subject))
-        return out
+    fun snapshot(): Map<String, List<Int>> {
+        return listSubjects().associateWith {
+            listVersions(it)
+        }
     }
 
     fun size(): Int {
@@ -202,7 +183,7 @@ class SchemaRegistryProvider : Provider {
             return "Embedded Confluent-shape schema registry."
         }
 
-        override fun create(config: MutableMap<String?, Any?>?): Provider {
+        override fun create(config: Map<String, Any>): Provider {
             return SchemaRegistryProvider()
         }
     }

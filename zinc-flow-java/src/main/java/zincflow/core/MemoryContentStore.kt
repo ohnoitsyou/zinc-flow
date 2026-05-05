@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicLong
  * [ConcurrentHashMap]. Used by tests and by production pipelines
  * that don't need disk-backed content (the bytes already live in the
  * JVM anyway). */
-class MemoryContentStore(initialData: Map<String, ByteArray>) : ContentStore {
+class MemoryContentStore(initialData: Map<String, ByteArray> = mapOf()) : ContentStore {
     private val content = initialData.toMutableMap()
     private val counter = AtomicLong(content.size.toLong())
 
@@ -32,5 +32,8 @@ class MemoryContentStore(initialData: Map<String, ByteArray>) : ContentStore {
 
     fun size(): Int {
         return content.size
+    }
+    companion object {
+        const val NAME = "MemoryContentStore"
     }
 }

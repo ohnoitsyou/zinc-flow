@@ -10,7 +10,7 @@ import zincflow.core.Processor
 import zincflow.core.ProcessorResult
 import zincflow.core.ProcessorResult.MultiRouted
 import zincflow.core.RecordContent
-import java.util.List
+import java.util.ArrayList
 
 /** Partition each incoming RecordContent's records across named routes
  * based on per-route expression predicates evaluated against the record's
@@ -23,85 +23,74 @@ import java.util.List
  * delimited list of `name: expression` pairs. Each expression
  * evaluates via Apache Commons JEXL with every record field exposed as
  * a top-level variable plus the full map available as `record`. */
-class RouteRecord(spec: String?) : Processor {
+class RouteRecord(spec: String) : Processor {
     @JvmRecord
-    private data class Route(val name: String?, val predicate: JexlExpression?)
+    private data class Route(val name: String, val predicate: JexlExpression)
 
-    private val routes: MutableList<Route>
+    private val routes: List<Route> = spec.parseToRoutes()
 
-    init {
-        val parsed: MutableList<Route?> = ArrayList<Route?>()
-        if (spec != null) {
-            val entries: Array<String?> = spec.split(";".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
-            for (i in entries.indices) {
-                val entry = entries[i]!!.trim { it <= ' ' }
-                if (entry.isEmpty()) continue
-                val colon = entry.indexOf(':')
-                require(colon > 0) {
-                    ("RouteRecord: malformed route at index " + i + ": '" + entry
-                            + "' — expected 'name: expression'")
-                }
-                val name = entry.substring(0, colon).trim { it <= ' ' }
-                val exprStr = entry.substring(colon + 1).trim { it <= ' ' }
-                require(!name.isEmpty()) { "RouteRecord: route at index " + i + " has empty name" }
-                require(!exprStr.isEmpty()) { "RouteRecord: route '" + name + "' has empty expression" }
-                require("unmatched" != name) { "RouteRecord: 'unmatched' is reserved for records that match no route" }
-                try {
-                    parsed.add(Route(name, JEXL.createExpression(exprStr)))
-                } catch (ex: JexlException) {
-                    throw IllegalArgumentException(
-                        ("RouteRecord: route '" + name + "' has invalid expression '"
-                                + exprStr + "': " + ex.message), ex
-                    )
-                }
+    private fun String.parseToRoutes(): List<Route> {
+        val parsed = mutableListOf<Route>()
+        val entries: List<String> = this.split(";").mapNotNull { e -> e.trim().takeIf { it.isNotEmpty() } }
+        for ((i, entry) in entries.withIndex()) {
+            require(entry.contains(":")) {
+                "RouteRecord: malformed route at index $i: '$entry' — expected 'name: expression'"
+            }
+
+            val (name, expression) = entry.split(":", limit = 1)
+            require(name.isNotBlank()) { "RouteRecord: route at index $i has empty name" }
+            require(expression.isNotBlank()) { "RouteRecord: route '$name' has empty expression" }
+            require("unmatched" != name) { "RouteRecord: 'unmatched' is reserved for records that match no route" }
+
+            try {
+                parsed.add(Route(name, JEXL.createExpression(expression)))
+            } catch (ex: JexlException) {
+                throw IllegalArgumentException(
+                    ("RouteRecord: route '" + name + "' has invalid expression '"
+                            + expression + "': " + ex.message), ex
+                )
             }
         }
-        this.routes = List.copyOf<Route?>(parsed)
+        return parsed
     }
 
-    override fun process(ff: FlowFile): ProcessorResult? {
-        if (ff.content !is RecordContent) {
-            return ProcessorResult.single(ff)
+    override fun process(ff: FlowFile): ProcessorResult {
+        val content = ff.content
+        if (content !is RecordContent) {
+            return ProcessorResult.Single(ff)
         }
 
         // Partition in insertion order so downstream emission order is
         // deterministic across runs.
-        val buckets: MutableMap<String?, MutableList<MutableMap<String?, Any?>?>?> =
-            LinkedHashMap<String?, MutableList<MutableMap<String?, Any?>?>?>()
-        for (record in rc.records) {
-            var matched: String? = null
-            for (route in routes) {
-                val ctx = MapContext()
-                ctx.set("record", record)
-                for (e in record.entries) ctx.set(e.key, e.value)
-                val v: Any?
-                try {
-                    v = route.predicate!!.evaluate(ctx)
-                } // A record missing a referenced field becomes null under safe
-                // JEXL; the compare then returns null. Either way we treat
-                // the record as not matching this route, not as a whole-
-                // FlowFile failure.
-                catch (ex: JexlException) {
-                    continue
+        val buckets = mutableMapOf<String, MutableList<Map<String, Any>>>()
+        for (record in content.records) {
+            val key = routes.firstOrNull { route ->
+                val ctx = MapContext().apply {
+                    set("record", record)
+                    record.entries.forEach {
+                        set(it.key, it.value)
+                    }
                 }
-                if (isTruthy(v)) {
-                    matched = route.name
-                    break
+                try {
+                    isTruthy(route.predicate.evaluate(ctx))
+                } catch (_: JexlException) {
+                    // A record missing a referenced field becomes null under safe
+                    // JEXL; the compare then returns null. Either way we treat
+                    // the record as not matching this route, not as a whole-
+                    // FlowFile failure.
+                    false
                 }
             }
-            val key = if (matched == null) "unmatched" else matched
-            buckets.computeIfAbsent(key) { `_`: kotlin.String? -> java.util.ArrayList<kotlin.collections.MutableMap<kotlin.String?, kotlin.Any?>?>() }!!
-                .add(record)
+                ?.name ?: "unmatched"
+
+            buckets.computeIfAbsent(key) { mutableListOf() }.add(record)
         }
 
-        if (buckets.isEmpty()) return ProcessorResult.dropped()
+        if (buckets.isEmpty()) return ProcessorResult.Dropped()
 
-        val entries: MutableList<MultiRouted.Entry?> = ArrayList<MultiRouted.Entry?>(buckets.size)
-        for (e in buckets.entries) {
-            val child = RecordContent(e.value, rc.schema)
-            entries.add(MultiRouted.Entry(e.key, ff.withContent(child)))
-        }
-        return ProcessorResult.multiRouted(entries)
+        return MultiRouted(buckets.entries.map { (key, value) ->
+            ProcessorResult.Routed(key, ff.withContent(RecordContent(value, content.schema)))
+        })
     }
 
     companion object {

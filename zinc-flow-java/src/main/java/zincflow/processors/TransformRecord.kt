@@ -11,9 +11,7 @@ import zincflow.core.Processor
 import zincflow.core.ProcessorResult
 import zincflow.core.RecordContent
 import zincflow.core.SchemaDefs
-import java.util.List
 import java.util.Locale
-import java.util.Set
 import java.util.StringJoiner
 import kotlin.Any
 import kotlin.Boolean
@@ -23,27 +21,15 @@ import kotlin.Float
 import kotlin.IllegalArgumentException
 import kotlin.Int
 import kotlin.Long
-import kotlin.collections.ArrayList
 import kotlin.collections.HashSet
 import kotlin.collections.LinkedHashMap
-import kotlin.collections.MutableList
 import kotlin.collections.MutableMap
 import kotlin.collections.MutableSet
-import kotlin.collections.contains
-import kotlin.collections.containsKey
-import kotlin.collections.dropLastWhile
-import kotlin.collections.get
-import kotlin.collections.isEmpty
 import kotlin.collections.mutableListOf
-import kotlin.collections.remove
-import kotlin.collections.toTypedArray
 import kotlin.plus
 import kotlin.require
-import kotlin.text.isBlank
-import kotlin.text.isEmpty
 import kotlin.text.lowercase
 import kotlin.text.split
-import kotlin.text.toRegex
 import kotlin.text.trim
 import kotlin.text.uppercase
 
@@ -69,61 +55,55 @@ import kotlin.text.uppercase
  * portable across tracks. */
 class TransformRecord(operationsSpec: String) : Processor {
     @JvmRecord
-    private data class Directive(val op: String?, val arg1: String?, val arg2: String?, val compiled: JexlExpression?)
+    private data class Directive(val op: String, val target: String, val expression: String, val compiled: JexlExpression?)
 
-    private val directives: MutableList<Directive>
+    private val directives: List<Directive> = operationsSpec.parseSpecToOperations()
 
-    init {
-        require(!(operationsSpec == null || operationsSpec.isBlank())) { "TransformRecord: operations must have at least one directive" }
-        val parsed: MutableList<Directive?> = ArrayList<Directive?>()
-        for (raw in operationsSpec.split(";".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()) {
-            val directive = raw.trim { it <= ' ' }
-            if (directive.isEmpty()) continue
+    private fun String.parseSpecToOperations() : List<Directive> {
+        require(isNotBlank()) { "TransformRecord: operations must have at least one directive" }
+        val parsed = mutableListOf<Directive>()
+        for (directive in split(";").mapNotNull { op -> op.trim().takeIf { it.isNotEmpty() }}) {
             // Split into up to 3 parts so arg2 can legally contain colons
             // (e.g. compute expressions with dotted paths).
-            val parts = directive.split(":".toRegex(), limit = 3).toTypedArray()
+            val parts = directive.split(":", limit = 3)
             require(parts.size >= 2) {
-                ("TransformRecord: malformed directive '" + directive
-                        + "' — expected 'op:arg1' or 'op:arg1:arg2'")
+                "TransformRecord: malformed directive '$directive' — expected 'operation:target' or 'operation:target:expression'"
             }
-            val op: String? = parts[0]
+
+            val (op, target, expression) = parts
             require(KNOWN_OPS.contains(op)) {
-                ("TransformRecord: unknown op '" + op + "' in directive '" + directive
-                        + "' — valid: " + String.join(", ", KNOWN_OPS))
+                "TransformRecord: unknown op '$op' in directive '$directive' — valid: ${KNOWN_OPS.joinToString()}"
             }
-            val arg1: kotlin.String? = parts[1]
-            val arg2 = if (parts.size > 2) parts[2] else ""
             var compiled: JexlExpression? = null
             if ("compute" == op) {
-                require(!arg2.isBlank()) { "TransformRecord: compute requires an expression — 'compute:target:expr'" }
+                require(expression.isNotBlank()) { "TransformRecord: compute requires an expression — 'operation:target:expr'" }
+
                 try {
-                    compiled = JEXL.createExpression(arg2)
+                    compiled = JEXL.createExpression(expression)
                 } catch (ex: JexlException) {
-                    throw IllegalArgumentException(
-                        "TransformRecord: invalid JEXL in compute '" + arg2 + "' — " + ex.message, ex
-                    )
+                    throw IllegalArgumentException("TransformRecord: invalid JEXL in compute '$expression' — ${ex.message}", ex)
                 }
             }
-            parsed.add(Directive(op, arg1, arg2, compiled))
+            parsed.add(Directive(op, target, expression, compiled))
         }
-        require(!parsed.isEmpty()) { "TransformRecord: operations spec produced no directives" }
-        this.directives = List.copyOf<Directive?>(parsed)
+        require(parsed.isNotEmpty()) { "TransformRecord: operations spec produced no directives" }
+        return parsed
     }
 
     override fun process(ff: FlowFile): ProcessorResult {
-        if (ff.content !is RecordContent) {
-            return ProcessorResult.failure(
+        val content = ff.content
+        if (content !is RecordContent) {
+            return ProcessorResult.Failure(
                 "TransformRecord: expected RecordContent, got " + ff.content.javaClass.getSimpleName(), ff
             )
         }
-        if (rc.records.isEmpty()) {
-            return ProcessorResult.single(ff)
+        if (content.records.isEmpty()) {
+            return ProcessorResult.Single(ff)
         }
 
-        val transformed: MutableList<MutableMap<kotlin.String?, Any?>?> =
-            ArrayList<MutableMap<kotlin.String?, Any?>?>(rc.records.size)
-        for (record in rc.records) {
-            val dict: MutableMap<kotlin.String?, Any?> = LinkedHashMap<kotlin.String?, Any?>(record)
+        val transformed = mutableListOf<MutableMap<String, Any>>()
+        for (record in content.records) {
+            val dict: MutableMap<String, Any> = LinkedHashMap(record)
             for (d in directives) {
                 applyOp(dict, d)
             }
@@ -135,48 +115,33 @@ class TransformRecord(operationsSpec: String) : Processor {
         // is a fresh inferred schema, which covers the common cases
         // (add/compute adds typed fields; rename/copy preserves types
         // through the map; remove drops fields cleanly).
-        val schemaName: kotlin.String? = if (rc.schema == null) "TransformedRecord" else rc.schema.getName()
-        val outSchema: Schema? = inferSchema(schemaName, transformed.getFirst())
+        val schemaName = if (content.schema == null) "TransformedRecord" else content.schema.getName()
+        val outSchema = inferSchema(schemaName, transformed.first())
 
-        return ProcessorResult.single(ff.withContent(RecordContent(transformed, outSchema)))
+        return ProcessorResult.Single(ff.withContent(RecordContent(transformed, outSchema)))
     }
 
-    private fun applyOp(dict: MutableMap<kotlin.String?, Any?>, d: Directive) {
+    private fun applyOp(dict: MutableMap<String, Any>, d: Directive) {
         when (d.op) {
-            "rename" -> {
-                if (dict.containsKey(d.arg1)) dict.put(d.arg2, dict.remove(d.arg1))
-            }
-
-            "remove" -> dict.remove(d.arg1)
-            "add" -> dict.put(d.arg1, d.arg2)
-            "copy" -> {
-                if (dict.containsKey(d.arg1)) dict.put(d.arg2, dict.get(d.arg1))
-            }
-
-            "toUpper" -> {
-                if (dict.get(d.arg1) is kotlin.String) dict.put(d.arg1, s.uppercase(Locale.getDefault()))
-            }
-
-            "toLower" -> {
-                if (dict.get(d.arg1) is kotlin.String) dict.put(d.arg1, s.lowercase(Locale.getDefault()))
-            }
-
-            "default" -> {
-                if (!dict.containsKey(d.arg1) || dict.get(d.arg1) == null) dict.put(d.arg1, d.arg2)
-            }
-
+            "rename" -> dict.remove(d.target)?.let { dict[d.expression] = it }
+            "remove" -> dict.remove(d.target)
+            "add" -> dict[d.target] = d.expression
+            "copy" -> dict[d.target]?.let { dict[d.expression] = it }
+            "toUpper" -> dict[d.target]?.let { v -> (v as? String)?.let { s -> dict[d.target] = s.uppercase(Locale.getDefault()) } }
+            "toLower" -> dict[d.target]?.let { v -> (v as? String)?.let { s -> dict[d.target] = s.lowercase(Locale.getDefault()) } }
+            "default" -> dict.computeIfAbsent(d.target) { d.expression }
             "compute" -> {
-                val ctx = MapContext()
-                ctx.set("record", dict)
-                for (e in dict.entries) ctx.set(e.key, e.value)
+                val ctx = MapContext().apply {
+                    set("record", dict)
+                    dict.entries.forEach { (key, value) -> set(key, value) }
+                }
                 try {
-                    dict.put(d.arg1, d.compiled!!.evaluate(ctx))
-                } catch (ex: JexlException) {
+                    dict[d.target] = d.compiled!!.evaluate(ctx)
+                } catch (_: JexlException) {
                     // C# silently skips failed computes — match that so
                     // one bad record doesn't crash the whole batch.
                 }
             }
-
             else -> {}
         }
     }
@@ -185,34 +150,30 @@ class TransformRecord(operationsSpec: String) : Processor {
         private val JEXL: JexlEngine = JexlBuilder()
             .strict(false).safe(true).silent(false).create()
 
-        private val KNOWN_OPS: MutableSet<kotlin.String?> = Set.copyOf<kotlin.String?>(
-            mutableListOf<kotlin.String?>(
+        private val KNOWN_OPS: Set<String> = setOf(
                 "rename", "remove", "add", "copy", "toUpper", "toLower", "default", "compute"
-            )
         )
 
         /** Build a flat Avro Schema from a record's keys + value types.
          * Matches the inference logic in ConvertJSONToRecord / ConvertCSVToRecord. */
-        private fun inferSchema(name: kotlin.String?, record: MutableMap<kotlin.String?, Any?>): Schema? {
+        private fun inferSchema(name: String, record: Map<String, Any>): Schema? {
             if (record.isEmpty()) return null
-            val defs = StringJoiner(",")
-            val seen: MutableSet<kotlin.String?> = HashSet<kotlin.String?>()
-            for (entry in record.entries) {
-                if (!seen.add(entry.key)) continue
-                defs.add(entry.key + ":" + inferType(entry.value))
+            val defs = record.entries.joinToString { (key, value) ->
+                "$key:${inferType(value)}"
             }
-            return SchemaDefs.parse(name, defs.toString())
+            return SchemaDefs.parse(name, defs)
         }
 
-        private fun inferType(v: Any?): kotlin.String {
-            if (v == null) return "string"
-            if (v is Boolean) return "boolean"
-            if (v is Int) return "int"
-            if (v is Long) return "long"
-            if (v is Float) return "float"
-            if (v is Double) return "double"
-            if (v is ByteArray) return "bytes"
-            return "string"
+        private fun inferType(v: Any): String {
+            return when(v) {
+                is Boolean -> "boolean"
+                is Int -> "int"
+                is Long -> "long"
+                is Float -> "float"
+                is Double -> "double"
+                is ByteArray -> "bytes"
+                else -> "string"
+            }
         }
     }
 }

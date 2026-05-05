@@ -26,21 +26,16 @@ import java.nio.file.StandardOpenOption
  * supplied [ContentStore]. */
 class PutFile @JvmOverloads constructor(
     directory: String,
-    append: Boolean = false,
+    private val append: Boolean = false,
     format: String? = "raw",
-    store: ContentStore? = null
+    private val store: ContentStore? = null
 ) : Processor {
     private val directory: Path
-    private val append: Boolean
-    private val v3: Boolean
-    private val store: ContentStore?
+    private val v3: Boolean = "v3".equals(format, ignoreCase = true)
 
     init {
-        require(!(directory == null || directory.isEmpty())) { "PutFile: directory must not be blank" }
+        require(directory.isNotEmpty()) { "PutFile: directory must not be blank" }
         this.directory = Path.of(directory)
-        this.append = append
-        this.v3 = "v3".equals(format, ignoreCase = true)
-        this.store = store
     }
 
     override fun process(ff: FlowFile): ProcessorResult {
@@ -59,28 +54,28 @@ class PutFile @JvmOverloads constructor(
                 val packed = FlowFileV3.pack(ff, resolved.bytes)
                 writeBytes(target, packed)
             } else if (ff.content is ClaimContent && store != null) {
-                store.openRead(claim.claimId).use { `in` ->
+                store.openRead(ff.content.claimId).use { `in` ->
                     Files.newOutputStream(target, *openOptions()).use { out ->
                         `in`.transferTo(out)
                     }
                 }
             } else if (ff.content is RawContent) {
-                writeBytes(target, raw.bytes)
+                writeBytes(target, ff.content.bytes)
             } else {
                 val resolved = ContentResolver.resolve(ff.content, store)
                 if (!resolved.ok()) return fail(ff, resolved.error)
                 writeBytes(target, resolved.bytes)
             }
-            return ProcessorResult.single(ff.withAttribute("putfile.path", target.toAbsolutePath().toString()))
+            return ProcessorResult.Single(ff.withAttribute("putfile.path", target.toAbsolutePath().toString()))
         } catch (ex: IOException) {
-            log.error("PutFile: write failed for {}: {}", target, ex.toString())
-            return ProcessorResult.failure(ex.message, ff)
+            log.error("PutFile: write failed for $target: $ex")
+            return ProcessorResult.Failure(ex.message ?: "", ff)
         }
     }
 
-    private fun fail(ff: FlowFile?, reason: String?): ProcessorResult {
-        log.error("PutFile: {}", reason)
-        return ProcessorResult.failure("PutFile: " + reason, ff)
+    private fun fail(ff: FlowFile, reason: String?): ProcessorResult {
+        log.error("PutFile: $reason")
+        return ProcessorResult.Failure("PutFile: $reason", ff)
     }
 
     @Throws(IOException::class)
@@ -88,11 +83,11 @@ class PutFile @JvmOverloads constructor(
         Files.write(target, bytes, *openOptions())
     }
 
-    private fun openOptions(): Array<StandardOpenOption?> {
-        return if (append)
-            arrayOf<StandardOpenOption>(StandardOpenOption.CREATE, StandardOpenOption.APPEND)
-        else
-            arrayOf<StandardOpenOption>(StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
+    private fun openOptions(): Array<StandardOpenOption> {
+        return buildList {
+            add(StandardOpenOption.CREATE)
+            add(if (append) StandardOpenOption.APPEND else StandardOpenOption.TRUNCATE_EXISTING)
+        }.toTypedArray()
     }
 
     companion object {

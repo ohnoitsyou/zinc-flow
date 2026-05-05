@@ -21,10 +21,12 @@ object ContentHelpers {
      * a [ClaimContent]. A null store forces the inline path —
      * callers without a store (tests, small pipelines) get the small
      * behavior automatically. */
+    @JvmStatic
     fun maybeOffload(store: ContentStore?, data: ByteArray?): Content {
         return maybeOffload(store, data, DEFAULT_CLAIM_THRESHOLD)
     }
 
+    @JvmStatic
     fun maybeOffload(store: ContentStore?, data: ByteArray?, threshold: Int): Content {
         val bytes = data ?: ByteArray(0)
         if (store == null || bytes.size <= threshold) {

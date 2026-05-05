@@ -37,7 +37,7 @@ import kotlin.concurrent.Volatile
 class VersionControlProvider(repo: Path?, gitBinary: String?, remote: String?, branch: String?) : Provider {
     data class CommandResult(val ok: Boolean, val exitCode: Int, val stdout: String = "", val stderr: String = "") { }
 
-    data class Status(val enabled: Boolean, val clean: Boolean, val ahead: Int, val behind: Int, val branch: String?, val error: String?)
+    data class Status(val enabled: Boolean, val clean: Boolean, val ahead: Int, val behind: Int, val branch: String, val error: String?)
 
     val repo: Path = repo ?: Path.of(".")
     val gitBinary: String = if (gitBinary.isNullOrEmpty()) "git" else gitBinary
@@ -160,7 +160,7 @@ class VersionControlProvider(repo: Path?, gitBinary: String?, remote: String?, b
             put("branch", s.branch)
             put("remote", remote)
             put("repo", repo.toString())
-            if (!s.error!!.isEmpty()) put("error", s.error)
+            if (s.error?.isNotEmpty() == true) put("error", s.error)
         }
     }
 

@@ -22,9 +22,9 @@ data class RecordContent private constructor(
         operator fun invoke(records: List<Map<String, Any>>, schema: Schema? = null): RecordContent {
             return RecordContent(records.toList(), schema)
         }
-        operator fun invoke(records: MutableList<MutableMap<String, Any>>, schema: Schema? = null): RecordContent {
-            return RecordContent(records.toList(), schema)
-        }
+//        operator fun invoke(records: MutableList<MutableMap<String, Any>>, schema: Schema? = null): RecordContent {
+//            return RecordContent(records.toList(), schema)
+//        }
     }
     override fun size(): Int {
         return records.size

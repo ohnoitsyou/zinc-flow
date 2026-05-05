@@ -20,6 +20,7 @@ object FlowValidator {
      * set of defined processors (so the unreachable check can warn
      * on sink processors declared but never wired); `connections`
      * maps `fromProcessor → relationship → [target,...]`. */
+    @JvmStatic
     fun validate(
         processorNames: Collection<String>,
         connections: Map<String, Map<String, List<String>>>

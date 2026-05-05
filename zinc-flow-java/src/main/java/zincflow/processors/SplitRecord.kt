@@ -17,34 +17,35 @@ import java.util.List
  * [RouteRecord] for per-record routing. */
 class SplitRecord : Processor {
     override fun process(ff: FlowFile): ProcessorResult {
-        if (ff.content !is RecordContent || rc.records.isEmpty()) {
-            return ProcessorResult.single(ff)
+        val content = ff.content
+        if (content !is RecordContent || content.records.isEmpty()) {
+            return ProcessorResult.Single(ff)
         }
 
-        val total: Int = rc.records.size
+        val total: Int = content.records.size
         val width = total.toString().length
         val totalStr = total.toString()
 
-        val children: MutableList<FlowFile?> = ArrayList<FlowFile?>(total)
+        val children = mutableListOf<FlowFile>()
         for (i in 0..<total) {
-            val record: MutableMap<String?, Any?> = rc.records.get(i)
-            val child = RecordContent(List.of<MutableMap<String?, Any?>?>(record), rc.schema)
+            val record: Map<String, Any> = content.records[i]
+            val child = RecordContent(listOf(record), content.schema)
             val emitted = ff
                 .withContent(child)
                 .withAttribute("split.index", padLeft(i.toString(), width))
                 .withAttribute("split.total", totalStr)
             children.add(emitted)
         }
-        return ProcessorResult.multiple(children)
+        return ProcessorResult.Multiple(children)
     }
 
     companion object {
         private fun padLeft(s: String, width: Int): String {
             if (s.length >= width) return s
-            val sb = StringBuilder(width)
-            for (i in 0..<width - s.length) sb.append('0')
-            sb.append(s)
-            return sb.toString()
+            return buildString {
+                repeat(width - s.length) { append('0') }
+                append(s)
+            }
         }
     }
 }

@@ -7,7 +7,6 @@ import zincflow.core.Processor
 import zincflow.core.ProcessorResult
 import zincflow.core.RecordContent
 import java.nio.charset.StandardCharsets
-import java.util.List
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
@@ -23,14 +22,13 @@ import java.util.regex.Pattern
  * list skip that group.
  * 
  * Mirrors zinc-flow-csharp's ExtractText (StdLib/TextProcessors.cs). */
-class ExtractText(regex: String, groupNames: String?, store: ContentStore?) : Processor {
+class ExtractText(regex: String, groupNames: String?, private val store: ContentStore?) : Processor {
     private val pattern: Pattern
-    private val positionalGroupNames: MutableList<String>
-    private val store: ContentStore?
+    private val positionalGroupNames: List<String> = parseGroupNames(groupNames)
 
     override fun process(ff: FlowFile): ProcessorResult {
         if (ff.content is RecordContent) {
-            return ProcessorResult.failure(
+            return ProcessorResult.Failure(
                 "ExtractText: RecordContent not supported — serialize to raw first",
                 ff
             )
@@ -38,13 +36,13 @@ class ExtractText(regex: String, groupNames: String?, store: ContentStore?) : Pr
 
         val resolved = ContentResolver.resolve(ff.content, store)
         if (!resolved.ok()) {
-            return ProcessorResult.failure("ExtractText: " + resolved.error, ff)
+            return ProcessorResult.Failure("ExtractText: " + resolved.error, ff)
         }
 
         val text = String(resolved.bytes, StandardCharsets.UTF_8)
         val matcher = pattern.matcher(text)
         if (!matcher.find()) {
-            return ProcessorResult.single(ff)
+            return ProcessorResult.Single(ff)
         }
 
         var out = ff
@@ -73,23 +71,18 @@ class ExtractText(regex: String, groupNames: String?, store: ContentStore?) : Pr
             i++
         }
 
-        return ProcessorResult.single(out)
+        return ProcessorResult.Single(out)
     }
 
     init {
-        require(!(regex == null || regex.isEmpty())) { "ExtractText: pattern must not be blank" }
+        require(regex.isNotEmpty()) { "ExtractText: pattern must not be blank" }
         this.pattern = Pattern.compile(regex)
-        this.positionalGroupNames = parseGroupNames(groupNames)
-        this.store = store
     }
 
     companion object {
-        private fun parseGroupNames(spec: String?): MutableList<String> {
-            if (spec == null || spec.isBlank()) return mutableListOf<String?>()
-            val parts = spec.split(",".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
-            val out: MutableList<String?> = ArrayList<String?>(parts.size)
-            for (p in parts) out.add(p.trim { it <= ' ' })
-            return List.copyOf<String?>(out)
+        private fun parseGroupNames(spec: String?): List<String> {
+            if (spec.isNullOrBlank()) return listOf()
+            return spec.split(",".toRegex()).dropLastWhile { it.isEmpty() }.map { it.trim() }
         }
 
         /** Discover named groups by scraping the pattern text — Java's
@@ -97,12 +90,13 @@ class ExtractText(regex: String, groupNames: String?, store: ContentStore?) : Pr
          * `(?<name>...)` syntax, which is the only named-group form
          * [Pattern.compile] accepts. */
         private fun namedGroups(p: Pattern): MutableSet<String> {
-            val names: MutableSet<String> = LinkedHashSet<String>()
+            val names = mutableSetOf<String>()
             val m: Matcher = NAMED_GROUP_REGEX.matcher(p.pattern())
             while (m.find()) names.add(m.group(1))
             return names
         }
 
         private val NAMED_GROUP_REGEX: Pattern = Pattern.compile("\\(\\?<([A-Za-z][A-Za-z0-9]*)>")
+        private val GROUP_REGEX = "\\(\\?<([A-Za-z][A-Za-z0-9]*)>".toRegex()
     }
 }

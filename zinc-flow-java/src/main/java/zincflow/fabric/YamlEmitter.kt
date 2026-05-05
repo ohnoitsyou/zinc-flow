@@ -17,6 +17,7 @@ import zincflow.fabric.ConfigLoader.ProcessorSpec
  * round-tripped files stay diff-stable against the committed base. */
 object YamlEmitter {
     /** Emit a complete YAML document for the current graph + specs. */
+    @JvmStatic
     fun emit(graph: PipelineGraph, specs: Map<String, ProcessorSpec>): String? {
         val flow = mutableMapOf<String, Any>()
         flow["entryPoints"] = graph.entryPoints.toList()

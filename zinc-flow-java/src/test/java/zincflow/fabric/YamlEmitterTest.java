@@ -2,10 +2,10 @@ package zincflow.fabric;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-import java.util.Map;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import static org.junit.jupiter.api.Assertions.*;
 
 final class YamlEmitterTest {
 
@@ -35,9 +35,9 @@ final class YamlEmitterTest {
         // Parse it back and confirm structure matches.
         var loader2 = new ConfigLoader(new Registry());
         var reparsed = loader2.load(emitted);
-        assertEquals(graph.processors().keySet(), reparsed.processors().keySet());
-        assertEquals(graph.entryPoints(), reparsed.entryPoints());
-        assertEquals(graph.connections(), reparsed.connections());
+        assertEquals(graph.getProcessors().keySet(), reparsed.getProcessors().keySet());
+        assertEquals(graph.getEntryPoints(), reparsed.getEntryPoints());
+        assertEquals(graph.getConnections(), reparsed.getConnections());
 
         // Processor specs survive untouched.
         for (String name : loader.lastSpecs().keySet()) {
@@ -67,6 +67,7 @@ final class YamlEmitterTest {
                       type: RouteOnAttribute
                 """);
         String emitted = YamlEmitter.emit(graph, loader.lastSpecs());
+        assert emitted != null;
         assertTrue(emitted.contains("type: RouteOnAttribute"));
         // No "config: {}" noise.
         assertFalse(emitted.contains("config: {}"), emitted);
@@ -83,6 +84,7 @@ final class YamlEmitterTest {
                       type: RouteOnAttribute
                 """);
         String emitted = YamlEmitter.emit(graph, loader.lastSpecs());
+        assert emitted != null;
         assertFalse(emitted.contains("connections:"), emitted);
     }
 
@@ -102,6 +104,7 @@ final class YamlEmitterTest {
                       type: LogAttribute
                 """);
         String emitted = YamlEmitter.emit(graph, loader.lastSpecs());
+        assert emitted != null;
         int ai = emitted.indexOf("a:"), ci = emitted.indexOf("c:"), bi = emitted.indexOf("b:");
         assertTrue(ai < ci && ci < bi,
                 "processor order should be a, c, b to match declaration; got:\n" + emitted);

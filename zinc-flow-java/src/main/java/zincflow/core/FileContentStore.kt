@@ -95,4 +95,8 @@ class FileContentStore(val baseDir: Path) : ContentStore {
     private fun generateClaimId(): String {
         return "claim-" + System.currentTimeMillis() + "-" + counter.incrementAndGet()
     }
+
+    companion object {
+        const val NAME = "FileContentStore"
+    }
 }

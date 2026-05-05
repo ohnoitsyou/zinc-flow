@@ -10,50 +10,50 @@ final class FlowFileTest {
 
     @Test
     void createAssignsIncrementingIds() {
-        FlowFile a = FlowFile.create(new byte[]{1, 2}, Map.of());
-        FlowFile b = FlowFile.create(new byte[]{3, 4}, Map.of());
-        assertTrue(b.id > a.id, "id should increment");
+        FlowFile a = FlowFile.Companion.create(new byte[]{1, 2}, Map.of());
+        FlowFile b = FlowFile.Companion.create(new byte[]{3, 4}, Map.of());
+        assertTrue(b.getId() > a.getId(), "id should increment");
     }
 
     @Test
     void attributesAreDefensivelyCopied() {
         var mutable = new java.util.HashMap<String, String>();
         mutable.put("k", "v");
-        FlowFile ff = FlowFile.create(new byte[0], mutable);
+        FlowFile ff = FlowFile.Companion.create(new byte[0], mutable);
         mutable.put("k", "mutated");
-        assertEquals("v", ff.attributes().get("k"),
+        assertEquals("v", ff.getAttributes().get("k"),
                 "mutating the source map must not leak into the FlowFile");
     }
 
     @Test
     void withAttributeReturnsNewFlowFileWithKey() {
-        FlowFile ff = FlowFile.create(new byte[0], Map.of());
+        FlowFile ff = FlowFile.Companion.create(new byte[0], Map.of());
         FlowFile next = ff.withAttribute("priority", "high");
-        assertEquals("high", next.attributes().get("priority"));
-        assertFalse(ff.attributes().containsKey("priority"), "original should be untouched");
-        assertEquals(ff.id, next.id, "withAttribute preserves id");
+        assertEquals("high", next.getAttributes().get("priority"));
+        assertFalse(ff.getAttributes().containsKey("priority"), "original should be untouched");
+        assertEquals(ff.getId(), next.getId(), "withAttribute preserves id");
     }
 
     @Test
     void withContentSwapsPayloadPreservesAttributes() {
-        FlowFile ff = FlowFile.create(new byte[]{1}, Map.of("k", "v"));
+        FlowFile ff = FlowFile.Companion.create(new byte[]{1}, Map.of("k", "v"));
         FlowFile next = ff.withContent(new RawContent(new byte[]{7, 8, 9}));
-        assertEquals(3, next.content.size());
-        assertEquals("v", next.attributes().get("k"));
+        assertEquals(3, next.getContent().size());
+        assertEquals("v", next.getAttributes().get("k"));
     }
 
     @Test
     void bumpHopIncrementsCount() {
-        FlowFile ff = FlowFile.create(new byte[0], Map.of());
-        assertEquals(0, ff.hopCount);
-        assertEquals(1, ff.bumpHop().hopCount);
-        assertEquals(2, ff.bumpHop().bumpHop().hopCount);
+        FlowFile ff = FlowFile.Companion.create(new byte[0], Map.of());
+        assertEquals(0, ff.getHopCount());
+        assertEquals(1, ff.bumpHop().getHopCount());
+        assertEquals(2, ff.bumpHop().bumpHop().getHopCount());
     }
 
     @Test
     void stringIdFormatsAsFfDashId() {
-        FlowFile ff = FlowFile.create(new byte[0], Map.of());
-        assertEquals("ff-" + ff.id, ff.stringId());
+        FlowFile ff = FlowFile.Companion.create(new byte[0], Map.of());
+        assertEquals("ff-" + ff.getId(), ff.stringId());
     }
 
     @Test

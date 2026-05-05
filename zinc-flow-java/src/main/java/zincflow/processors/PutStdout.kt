@@ -22,22 +22,16 @@ import kotlin.math.min
  * Claim-backed content resolves through the supplied
  * [ContentStore]. */
 class PutStdout @JvmOverloads constructor(
-    prefix: String? = "",
+    private val prefix: String? = "",
     format: String? = "raw",
     private val store: ContentStore? = null
 ) : Processor {
-    private val prefix: String
-    private val format: Format
+    private val format: Format = Format.parse(format)
 
-    init {
-        this.prefix = if (prefix == null) "" else prefix
-        this.format = Format.Companion.parse(format)
-    }
-
-    override fun process(ff: FlowFile): ProcessorResult? {
+    override fun process(ff: FlowFile): ProcessorResult {
         val resolved = ContentResolver.resolve(ff.content, store)
         if (!resolved.ok()) {
-            return ProcessorResult.failure("PutStdout: " + resolved.error, ff)
+            return ProcessorResult.Failure("PutStdout: " + resolved.error, ff)
         }
         val bytes = resolved.bytes
         when (format) {
@@ -55,7 +49,7 @@ class PutStdout @JvmOverloads constructor(
                 )
             }
         }
-        return ProcessorResult.dropped()
+        return ProcessorResult.Dropped()
     }
 
     private enum class Format {
@@ -63,14 +57,12 @@ class PutStdout @JvmOverloads constructor(
 
         companion object {
             fun parse(s: String?): Format {
-                if (s == null || s.isBlank()) return Format.RAW
+                if (s.isNullOrBlank()) return RAW
                 return when (s.lowercase(Locale.getDefault())) {
-                    "raw", "text" -> Format.RAW
-                    "hex" -> Format.HEX
-                    "v3" -> Format.V3
-                    else -> throw IllegalArgumentException(
-                        "PutStdout: format must be raw/hex/v3, got '" + s + "'"
-                    )
+                    "raw", "text" -> RAW
+                    "hex" -> HEX
+                    "v3" -> V3
+                    else -> throw IllegalArgumentException("PutStdout: format must be raw/hex/v3, got '$s'")
                 }
             }
         }

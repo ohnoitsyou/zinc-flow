@@ -9,7 +9,6 @@ import zincflow.core.FlowFileAttributes
 import zincflow.core.Processor
 import zincflow.core.ProcessorResult
 import zincflow.fabric.FlowFileV3
-import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -30,43 +29,36 @@ import java.util.Locale
 class PutHTTP @JvmOverloads constructor(
     endpoint: String,
     method: String = "POST",
-    timeout: Duration? = Duration.ofSeconds(30),
+    private val timeout: Duration = Duration.ofSeconds(30),
     contentType: String? = "application/octet-stream",
     format: String? = "raw",
-    store: ContentStore? = null
+    private val store: ContentStore? = null
 ) : Processor {
-    private val endpoint: URI
-    private val method: String
-    private val timeout: Duration?
-    private val contentType: String
-    private val v3: Boolean
-    private val store: ContentStore?
-    private val client: HttpClient
+    private val endpoint: URI = endpoint.takeIf { it.isNotBlank() }
+        ?.let { URI.create(it) }
+        ?: throw IllegalArgumentException("PutHTTP: endpoint must not be blank")
 
-    init {
-        require(!(endpoint == null || endpoint.isEmpty())) { "PutHTTP: endpoint must not be blank" }
-        this.endpoint = URI.create(endpoint)
-        this.method = when (method.uppercase(Locale.getDefault())) {
-            "POST", "PUT", "PATCH" -> method.uppercase(Locale.getDefault())
-            else -> throw IllegalArgumentException("PutHTTP: method must be POST/PUT/PATCH, got " + method)
-        }
-        this.timeout = if (timeout == null) Duration.ofSeconds(30) else timeout
-        this.v3 = "v3".equals(format, ignoreCase = true)
-        this.contentType = if (this.v3)
-            "application/flowfile-v3"
-        else
-            (if (contentType == null) "application/octet-stream" else contentType)
-        this.store = store
-        this.client = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .version(HttpClient.Version.HTTP_2)
-            .build()
+    private val method: String = when (method.uppercase(Locale.getDefault())) {
+        "POST", "PUT", "PATCH" -> method.uppercase(Locale.getDefault())
+        else -> throw IllegalArgumentException("PutHTTP: method must be POST/PUT/PATCH, got $method")
     }
+
+    private val v3: Boolean = "v3".equals(format, ignoreCase = true)
+    private val contentType: String = if (this.v3) {
+        "application/flowfile-v3"
+    } else {
+        contentType ?: "application/octet-stream"
+    }
+
+    private val client: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(10))
+        .version(HttpClient.Version.HTTP_2)
+        .build()
 
     override fun process(ff: FlowFile): ProcessorResult {
         val resolved = ContentResolver.resolve(ff.content, store)
         if (!resolved.ok()) {
-            return ProcessorResult.failure("PutHTTP: " + resolved.error, ff)
+            return ProcessorResult.Failure("PutHTTP: " + resolved.error, ff)
         }
         val body = if (v3) FlowFileV3.pack(ff, resolved.bytes) else resolved.bytes
         val request = HttpRequest.newBuilder()
@@ -81,22 +73,14 @@ class PutHTTP @JvmOverloads constructor(
             val withMeta = ff
                 .withAttribute(FlowFileAttributes.PUTHTTP_STATUS, status.toString())
                 .withAttribute(FlowFileAttributes.PUTHTTP_RESPONSE_SIZE, response.body()!!.size.toString())
-            if (status >= 200 && status < 300) {
-                return ProcessorResult.single(withMeta)
+            if (status in 200..<300) {
+                return ProcessorResult.Single(withMeta)
             }
-            return ProcessorResult.failure("PutHTTP: non-2xx status " + status, withMeta)
-        } catch (ex: IOException) {
-            if (ex is InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
+            return ProcessorResult.Failure("PutHTTP: non-2xx status $status", withMeta)
+        } catch (ex: Exception) {
+            Thread.currentThread().interrupt()
             log.warn("PutHTTP: transport error to {}: {}", endpoint, ex.toString())
-            return ProcessorResult.failure("PutHTTP: " + ex.message, ff)
-        } catch (ex: InterruptedException) {
-            if (ex is InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
-            log.warn("PutHTTP: transport error to {}: {}", endpoint, ex.toString())
-            return ProcessorResult.failure("PutHTTP: " + ex.message, ff)
+            return ProcessorResult.Failure("PutHTTP: " + ex.message, ff)
         }
     }
 

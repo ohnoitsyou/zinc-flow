@@ -3,6 +3,8 @@ package zincflow.core;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -66,7 +68,7 @@ final class ContentStoreTest {
 
     @Test
     void contentResolverErrorsOnRecordContentAndMissingStore() {
-        var recs = new RecordContent(java.util.List.of(java.util.Map.of("k", "v")));
+        var recs = RecordContent.Companion.invoke(List.of(Map.of("k", "v")), null);
         assertFalse(ContentResolver.resolve(recs, new MemoryContentStore()).ok());
         assertFalse(ContentResolver.resolve(new ClaimContent("x", 0), null).ok());
     }

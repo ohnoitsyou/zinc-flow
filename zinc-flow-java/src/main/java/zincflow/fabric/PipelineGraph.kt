@@ -18,7 +18,7 @@ import kotlin.collections.toMap
  * sources (top of the DAG)
  */
 
-data class PipelineGraph(
+data class PipelineGraph @JvmOverloads constructor(
     val processors: Map<String, Processor>,
     val connections: Map<String, Map<String, List<String>>>,
     val entryPoints: List<String>,

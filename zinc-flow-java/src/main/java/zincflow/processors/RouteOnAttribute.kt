@@ -4,8 +4,7 @@ import zincflow.core.FlowFile
 import zincflow.core.Processor
 import zincflow.core.ProcessorResult
 import zincflow.core.Relationships
-import java.lang.Double
-import java.util.List
+import java.util.Locale
 import kotlin.Array
 import kotlin.Boolean
 import kotlin.IllegalArgumentException
@@ -31,69 +30,58 @@ import kotlin.require
  * No rule matches → routes to "unmatched". Downstream connections
  * decide what happens from there; wire a terminal processor or an
  * UpdateAttribute to "unmatched" to handle the fall-through explicitly. */
-class RouteOnAttribute(spec: String?) : Processor {
-    private val rules: MutableList<Rule>
-
-    init {
-        this.rules = parse(spec)
-    }
+class RouteOnAttribute(spec: String) : Processor {
+    private val rules: List<Rule> = parse(spec)
 
     override fun process(ff: FlowFile): ProcessorResult {
         for (rule in rules) {
             if (rule.evaluate(ff.attributes)) {
-                return ProcessorResult.routed(rule.name, ff)
+                return ProcessorResult.Routed(rule.name, ff)
             }
         }
-        return ProcessorResult.routed(Relationships.UNMATCHED, ff)
+        return ProcessorResult.Routed(Relationships.UNMATCHED, ff)
     }
 
-    fun rules(): MutableList<Rule> {
-        return rules
-    }
+    enum class Op(vararg val tokens: String) {
+        EQ("==", "EQ"),
+        NEQ("!=", "NEQ"),
+        CONTAINS("CONTAINS"),
+        STARTSWITH("STARTSWITH"),
+        ENDSWITH("ENDSWITH"),
+        MATCHES("MATCHES"),
+        EXISTS("EXISTS"),
+        GT(">", "GT"),
+        GE(">=", "GE"),
+        LT("<", "LT"),
+        LE("<=", "LE");
 
-    enum class Op {
-        EQ, NEQ, CONTAINS, STARTSWITH, ENDSWITH, MATCHES, EXISTS, GT, GE, LT, LE;
 
         companion object {
-            fun parse(token: String, routeName: String?): Op {
-                return when (token.uppercase()) {
-                    "==", "EQ" -> Op.EQ
-                    "!=", "NEQ" -> Op.NEQ
-                    "CONTAINS" -> Op.CONTAINS
-                    "STARTSWITH" -> Op.STARTSWITH
-                    "ENDSWITH" -> Op.ENDSWITH
-                    "MATCHES" -> Op.MATCHES
-                    "EXISTS" -> Op.EXISTS
-                    ">", "GT" -> Op.GT
-                    ">=", "GE" -> Op.GE
-                    "<", "LT" -> Op.LT
-                    "<=", "LE" -> Op.LE
-                    else -> throw IllegalArgumentException(
-                        ("RouteOnAttribute: route '" + routeName + "' has unsupported operator '"
-                                + token + "' — valid: EQ/==, NEQ/!=, CONTAINS, STARTSWITH, ENDSWITH, MATCHES, EXISTS, GT/>, GE/>=, LT/<, LE/<=")
-                    )
-                }
+            val tokenMap = entries.flatMap { e -> e.tokens.map { it to e } }.toMap()
+
+            fun parse(token: String, routeName: String): Op {
+                return tokenMap[token.uppercase(Locale.getDefault())] ?: throw IllegalArgumentException(
+                    "RouteOnAttribute: route '$routeName' has unsupported operator '$token' — valid: ${tokenMap.keys}"
+                )
             }
         }
     }
 
     @JvmRecord
-    data class Rule(val name: String?, val attribute: String?, val op: Op?, val value: String?) {
-        fun evaluate(attributes: MutableMap<String?, String?>): Boolean {
+    data class Rule(val name: String, val attribute: String, val op: Op, val value: String) {
+        fun evaluate(attributes: Map<String, String>): Boolean {
             if (op == Op.EXISTS) {
                 return attributes.containsKey(attribute)
             }
-            val actual = attributes.get(attribute)
-            if (actual == null) return false
+            val actual = attributes[attribute] ?: return false
             return when (op) {
                 Op.EQ -> (value == actual)
                 Op.NEQ -> (value != actual)
-                Op.CONTAINS -> actual.contains(value!!)
-                Op.STARTSWITH -> actual.startsWith(value!!)
-                Op.ENDSWITH -> actual.endsWith(value!!)
-                Op.MATCHES -> actual.matches(value!!.toRegex())
-                Op.GT, Op.GE, Op.LT, Op.LE -> Companion.compareTo(actual, value!!, op)
-                Op.EXISTS -> true
+                Op.CONTAINS -> actual.contains(value)
+                Op.STARTSWITH -> actual.startsWith(value)
+                Op.ENDSWITH -> actual.endsWith(value)
+                Op.MATCHES -> actual.matches(value.toRegex())
+                Op.GT, Op.GE, Op.LT, Op.LE -> compareTo(actual, value, op)
             }
         }
 
@@ -103,13 +91,12 @@ class RouteOnAttribute(spec: String?) : Processor {
              * compare when values aren't parseable as numbers, so GT/LT can be
              * used on version strings, timestamps-as-ISO-strings, etc. */
             private fun compareTo(actual: String, expected: String, op: Op?): Boolean {
-                var cmp: Int
-                try {
+                val cmp: Int = try {
                     val a = actual.toDouble()
                     val b = expected.toDouble()
-                    cmp = Double.compare(a, b)
-                } catch (ignored: NumberFormatException) {
-                    cmp = actual.compareTo(expected)
+                    a.compareTo(b)
+                } catch (_: NumberFormatException) {
+                    actual.compareTo(expected)
                 }
                 return when (op) {
                     Op.GT -> cmp > 0
@@ -124,35 +111,33 @@ class RouteOnAttribute(spec: String?) : Processor {
 
     companion object {
         // --- Parsing ---
-        private fun parse(spec: String?): MutableList<Rule> {
-            if (spec == null || spec.isBlank()) return mutableListOf<Rule?>()
-            val out: MutableList<Rule?> = ArrayList<Rule?>()
-            val entries: Array<String?> = spec.split(";".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
-            for (i in entries.indices) {
-                val entry = entries[i]!!.trim { it <= ' ' }
-                if (entry.isEmpty()) continue
-                val colonIdx = entry.indexOf(':')
-                require(colonIdx > 0) {
-                    ("RouteOnAttribute: malformed route at index " + i + ": '" + entry
-                            + "' — expected 'name: attr OP value'")
+        private fun parse(spec: String): List<Rule> {
+            if (spec.isBlank()) return listOf()
+
+            val out = mutableListOf<Rule>()
+            val entries = spec.split(";").mapNotNull { e -> e.trim().takeIf { it.isNotEmpty() } }
+            for ((i, entry) in entries.withIndex()) {
+                require(entry.contains(":")) {
+                    "RouteOnAttribute: malformed route at index $i: '$entry' — expected format: '<name>: <attr OP value>'"
                 }
-                val routeName = entry.substring(0, colonIdx).trim { it <= ' ' }
-                val condition = entry.substring(colonIdx + 1).trim { it <= ' ' }
+
+                val (routeName, condition) = entry.split(":", limit = 1)
                 // EXISTS takes no value: "routeA: attr EXISTS" is valid.
-                val parts: Array<String?> = condition.split("\\s+".toRegex(), limit = 3).toTypedArray()
+                val parts = condition.split("\\s+".toRegex(), limit = 3)
                 require(parts.size >= 2) {
-                    ("RouteOnAttribute: route '" + routeName + "' has malformed condition: '"
-                            + condition + "' — expected 'attr OP [value]'")
+                    "RouteOnAttribute: route '$routeName' has malformed condition: '$condition' — expected 'attr OP [value]'"
                 }
-                val op: Op = Op.Companion.parse(parts[1]!!, routeName)
+
+                val op: Op = Op.parse(parts[1], routeName)
                 val value = if (parts.size >= 3) parts[2] else ""
                 require(!(op != Op.EXISTS && parts.size < 3)) {
                     ("RouteOnAttribute: route '" + routeName + "' operator " + op
                             + " requires a value but none was provided")
                 }
+
                 out.add(Rule(routeName, parts[0], op, value))
             }
-            return List.copyOf<Rule?>(out)
+            return out
         }
     }
 }

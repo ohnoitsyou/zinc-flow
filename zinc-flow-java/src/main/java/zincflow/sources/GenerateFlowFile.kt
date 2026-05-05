@@ -70,7 +70,7 @@ class GenerateFlowFile(
         override fun configKeys(): MutableList<String> =
             mutableListOf("content", "contentType", "attributes", "batchSize", "pollIntervalMs")
 
-        override fun create(name: String, config: MutableMap<String, Any?>): Source? {
+        override fun create(name: String, config: Map<String, Any>): Source? {
             val content = str(config["content"])
             if (content.isEmpty()) return null // disabled when content is absent
 

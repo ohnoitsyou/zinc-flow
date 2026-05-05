@@ -8,7 +8,8 @@ package zincflow.core
  * 
  * `size` is recorded at claim time so stats and backpressure
  * heuristics don't need to round-trip to the store. */
-data class ClaimContent(val claimId: String, val size: Int) : Content {
+@JvmRecord
+data class ClaimContent(@JvmField val claimId: String, @JvmField val size: Int) : Content {
     override fun size(): Int {
         return size
     }

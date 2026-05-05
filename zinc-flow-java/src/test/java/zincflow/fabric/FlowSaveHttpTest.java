@@ -64,13 +64,13 @@ final class FlowSaveHttpTest {
         // File on disk parses back to the same graph shape.
         String written = Files.readString(base);
         var reloaded = new ConfigLoader(new Registry()).load(written);
-        assertTrue(reloaded.processors().containsKey("ingress"));
-        assertEquals(java.util.List.of("ingress"), reloaded.entryPoints());
+        assertTrue(reloaded.getProcessors().containsKey("ingress"));
+        assertEquals(java.util.List.of("ingress"), reloaded.getEntryPoints());
     }
 
     @Test
     void flowSaveWithoutLoaderReturns501() throws Exception {
-        var pipeline = new Pipeline(PipelineGraph.empty());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty());
         server = new HttpServer(pipeline).start(0);
         var resp = post("/api/flow/save", "");
         assertEquals(501, resp.statusCode());

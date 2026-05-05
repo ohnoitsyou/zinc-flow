@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 final class GraphMutationTest {
 
     private static Processor passThrough() {
-        return ff -> ProcessorResult.single(ff);
+        return ProcessorResult.Single.Companion::invoke;
     }
 
     private static Pipeline threeNodePipeline() {

@@ -6,17 +6,14 @@ import zincflow.core.ProcessorResult
 
 /** Sets (or replaces) a single attribute on the FlowFile and forwards
  * on "success". Multi-attribute updates are a Phase 3 follow-up. */
-class UpdateAttribute(key: String, value: String?) : Processor {
-    private val key: String
-    private val value: String
+class UpdateAttribute(private val key: String, value: String?) : Processor {
+    private val value: String = value.takeUnless { it == null } ?: ""
 
     init {
-        require(!(key == null || key.isEmpty())) { "UpdateAttribute: key must not be blank" }
-        this.key = key
-        this.value = if (value == null) "" else value
+        require(key.isNotBlank()) { "UpdateAttribute: key must not be blank" }
     }
 
     override fun process(ff: FlowFile): ProcessorResult {
-        return ProcessorResult.single(ff.withAttribute(key, value))
+        return ProcessorResult.Single(ff.withAttribute(key, value))
     }
 }

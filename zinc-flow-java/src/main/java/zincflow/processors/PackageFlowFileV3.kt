@@ -21,18 +21,18 @@ import zincflow.fabric.FlowFileV3
 class PackageFlowFileV3 @JvmOverloads constructor(private val store: ContentStore? = null) : Processor {
     override fun process(ff: FlowFile): ProcessorResult {
         if (ff.content is RecordContent) {
-            return ProcessorResult.failure(
+            return ProcessorResult.Failure(
                 "PackageFlowFileV3: RecordContent not supported — serialize to raw first", ff
             )
         }
         val resolved = ContentResolver.resolve(ff.content, store)
         if (!resolved.ok()) {
-            return ProcessorResult.failure("PackageFlowFileV3: " + resolved.error, ff)
+            return ProcessorResult.Failure("PackageFlowFileV3: " + resolved.error, ff)
         }
         val packed = FlowFileV3.pack(ff, resolved.bytes)
         val out = ff.withContent(RawContent(packed))
             .withAttribute(FlowFileAttributes.HTTP_CONTENT_TYPE, "application/flowfile-v3")
             .withAttribute("v3.packaged", "true")
-        return ProcessorResult.single(out)
+        return ProcessorResult.Single(out)
     }
 }
