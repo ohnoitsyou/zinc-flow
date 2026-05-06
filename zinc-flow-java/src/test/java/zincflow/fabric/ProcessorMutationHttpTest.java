@@ -25,7 +25,7 @@ final class ProcessorMutationHttpTest {
     void boot() {
         var registry = new Registry();
         var context = new ProcessorContext();
-        pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
+        pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
         pipeline.addProcessor("router", "RouteOnAttribute",
                 java.util.Map.of("routes", "high: priority == urgent"),
                 java.util.List.of(), java.util.Map.of());
@@ -48,13 +48,13 @@ final class ProcessorMutationHttpTest {
 
     @Test
     void updateProcessorConfigRebuildsInstance() throws Exception {
-        var before = pipeline.graph().processors().get("router");
+        var before = pipeline.graph().getProcessors().get("router");
 
         var resp = put("/api/processors/router/config",
                 "{\"config\":{\"routes\":\"low: priority == normal\"}}");
         assertEquals(200, resp.statusCode(), resp.body());
 
-        var after = pipeline.graph().processors().get("router");
+        var after = pipeline.graph().getProcessors().get("router");
         assertNotSame(before, after, "config update must rebuild the instance");
     }
 

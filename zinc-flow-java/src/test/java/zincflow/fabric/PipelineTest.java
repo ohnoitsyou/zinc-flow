@@ -24,7 +24,7 @@ final class PipelineTest {
         public ProcessorResult process(FlowFile ff) {
             calls.incrementAndGet();
             last = ff;
-            return ProcessorResult.dropped();
+            return new ProcessorResult.Dropped();
         }
     }
 
@@ -39,19 +39,19 @@ final class PipelineTest {
                 List.of("mark"));
         var pipeline = new Pipeline(graph);
 
-        pipeline.ingest(FlowFile.create(new byte[0], Map.of()));
+        pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
 
         assertEquals(1, sink.calls.get(), "sink should see one flowfile");
-        assertEquals("processed", sink.last.attributes().get("stage"));
+        assertEquals("processed", sink.last.getAttributes().get("stage"));
         assertEquals(2L, pipeline.stats().snapshot().get("totalProcessed"),
                 "stats count both mark + sink dispatches");
     }
 
     @Test
     void missingEntryPointsWarnButDoNotThrow() {
-        var graph = PipelineGraph.empty();
+        var graph = PipelineGraph.Companion.empty();
         var pipeline = new Pipeline(graph);
-        assertDoesNotThrow(() -> pipeline.ingest(FlowFile.create(new byte[0], Map.of())));
+        assertDoesNotThrow(() -> pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of())));
     }
 
     @Test
@@ -64,7 +64,7 @@ final class PipelineTest {
                 List.of("boom"));
         var pipeline = new Pipeline(graph);
 
-        pipeline.ingest(FlowFile.create(new byte[0], Map.of()));
+        pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
 
         assertEquals(1, failureSink.calls.get(), "failure sink should fire on exception");
     }
@@ -77,20 +77,20 @@ final class PipelineTest {
                 Map.of(),
                 List.of("boom"));
         var pipeline = new Pipeline(graph);
-        assertDoesNotThrow(() -> pipeline.ingest(FlowFile.create(new byte[0], Map.of())));
+        assertDoesNotThrow(() -> pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of())));
         assertEquals(1L, pipeline.stats().snapshot().get("totalFailed"));
     }
 
     @Test
     void maxHopsCapsRunawayCycles() {
         // A processor that bumps the stage count and loops back to itself.
-        Processor loop = ff -> ProcessorResult.single(ff);
+        Processor loop = ProcessorResult.Single.Companion::invoke;
         var graph = new PipelineGraph(
                 Map.of("loop", loop),
                 Map.of("loop", Map.of("success", List.of("loop"))),
                 List.of("loop"));
         var pipeline = new Pipeline(graph, 5);
-        assertDoesNotThrow(() -> pipeline.ingest(FlowFile.create(new byte[0], Map.of())),
+        assertDoesNotThrow(() -> pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of())),
                 "hop cap must protect against cycles");
     }
 }

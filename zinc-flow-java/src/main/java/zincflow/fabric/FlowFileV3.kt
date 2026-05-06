@@ -61,6 +61,7 @@ object FlowFileV3 {
         return out.toByteArray()
     }
 
+    @JvmStatic
     fun packMultiple(flowFiles: MutableList<FlowFile?>, contents: MutableList<ByteArray?>): ByteArray {
         require(flowFiles.size == contents.size) {
             ("flowFiles.size() (" + flowFiles.size + ") must equal contents.size() ("

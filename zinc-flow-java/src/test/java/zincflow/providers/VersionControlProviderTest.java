@@ -56,7 +56,7 @@ final class VersionControlProviderTest {
         Files.writeString(newFile, "hello");
         var vc = enabledProvider(dir);
         var r = vc.commit("note.txt", "add note");
-        assertTrue(r.ok, r.stderr());
+        assertTrue(r.ok, r.stderr);
         assertTrue(vc.status().clean, "after commit the working tree should be clean");
     }
 
@@ -76,7 +76,7 @@ final class VersionControlProviderTest {
         vc.enable();
         var r = vc.commit("x", "msg");
         assertFalse(r.ok);
-        assertFalse(r.stderr().isEmpty(), "expected stderr-populated failure for missing binary");
+        assertFalse(r.stderr.isEmpty(), "expected stderr-populated failure for missing binary");
     }
 
     // --- helpers ---

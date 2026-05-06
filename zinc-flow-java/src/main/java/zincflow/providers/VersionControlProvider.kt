@@ -35,9 +35,11 @@ import kotlin.concurrent.Volatile
  * All commands run with a short timeout and stderr captured. Results
  * are surfaced as records so the admin API can echo them as JSON. */
 class VersionControlProvider(repo: Path?, gitBinary: String?, remote: String?, branch: String?) : Provider {
-    data class CommandResult(val ok: Boolean, val exitCode: Int, val stdout: String = "", val stderr: String = "") { }
+    @JvmRecord
+    data class CommandResult @JvmOverloads constructor(@JvmField val ok: Boolean, @JvmField val exitCode: Int, @JvmField val stdout: String = "", @JvmField val stderr: String = "") { }
 
-    data class Status(val enabled: Boolean, val clean: Boolean, val ahead: Int, val behind: Int, val branch: String, val error: String?)
+    @JvmRecord
+    data class Status(@JvmField val enabled: Boolean, @JvmField val clean: Boolean, @JvmField val ahead: Int, @JvmField val behind: Int, @JvmField val branch: String, @JvmField val error: String?)
 
     val repo: Path = repo ?: Path.of(".")
     val gitBinary: String = if (gitBinary.isNullOrEmpty()) "git" else gitBinary

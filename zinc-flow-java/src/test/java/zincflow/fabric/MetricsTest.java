@@ -1,5 +1,7 @@
 package zincflow.fabric;
 
+import kotlin.jvm.functions.Function1;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import zincflow.core.FlowFile;
 import zincflow.core.Processor;
@@ -16,13 +18,13 @@ final class MetricsTest {
 
     @Test
     void scrapeContainsProcessorCounter() {
-        Processor noop = ff -> ProcessorResult.dropped();
+        Processor noop = ff -> new ProcessorResult.Dropped();
         var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"));
         var metrics = new Metrics();
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics);
 
-        pipeline.ingest(FlowFile.create(new byte[0], Map.of()));
-        pipeline.ingest(FlowFile.create(new byte[0], Map.of()));
+        pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
+        pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
 
         String scrape = metrics.scrape();
         assertTrue(scrape.contains("zinc_flow_ingested_total"),
@@ -35,13 +37,13 @@ final class MetricsTest {
 
     @Test
     void statsAndMetricsAgree() {
-        Processor noop = ff -> ProcessorResult.single(ff);
+        Processor noop = ProcessorResult.Single.Companion::invoke;
         var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"));
         var metrics = new Metrics();
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics);
 
         for (int i = 0; i < 5; i++) {
-            pipeline.ingest(FlowFile.create(new byte[0], Map.of()));
+            pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
         }
 
         var snapshot = pipeline.stats().snapshot();
@@ -56,11 +58,11 @@ final class MetricsTest {
         // Pipeline constructed without an explicit Metrics still has one —
         // a fresh registry is allocated so /metrics always works and the
         // call sites never need to null-check.
-        Processor noop = ff -> ProcessorResult.dropped();
+        Processor noop = ff -> new ProcessorResult.Dropped();
         var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"));
         var pipeline = new Pipeline(graph);
         assertNotNull(pipeline.metrics());
-        assertDoesNotThrow(() -> pipeline.ingest(FlowFile.create(new byte[0], Map.of())));
+        assertDoesNotThrow(() -> pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of())));
         assertTrue(pipeline.metrics().scrape().contains("zinc_flow_ingested_total 1"));
     }
 
@@ -79,13 +81,13 @@ final class MetricsTest {
     void activeExecutionsGaugeSettlesAtZero() {
         // Synchronous ingest paths all run to completion on the caller
         // thread, so after N ingests the gauge must read 0.
-        Processor noop = ff -> ProcessorResult.single(ff);
+        Processor noop = ProcessorResult.Single.Companion::invoke;
         var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"));
         var metrics = new Metrics();
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics);
 
         for (int i = 0; i < 3; i++) {
-            pipeline.ingest(FlowFile.create(new byte[0], Map.of()));
+            pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
         }
 
         String scrape = metrics.scrape();
@@ -102,14 +104,14 @@ final class MetricsTest {
         Processor blocker = ff -> {
             latch.countDown();
             try { released.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            return ProcessorResult.single(ff);
+            return ProcessorResult.Single.Companion.invoke(ff);
         };
         var graph = new PipelineGraph(Map.of("blocker", blocker), Map.of(), List.of("blocker"));
         var metrics = new Metrics();
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics);
 
         var worker = Thread.ofVirtual().start(() ->
-                pipeline.ingest(FlowFile.create(new byte[0], Map.of())));
+                pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of())));
 
         try { latch.await(); } catch (InterruptedException e) { fail("interrupted waiting for ingest start"); }
         String midScrape = metrics.scrape();
@@ -127,7 +129,7 @@ final class MetricsTest {
         var metrics = new Metrics();
         var stub = new StubSource("stub-a", "GenerateFlowFile");
 
-        Processor noop = ff -> ProcessorResult.dropped();
+        Processor noop = ff -> new ProcessorResult.Dropped();
         var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"));
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics);
         pipeline.addSource(stub);
@@ -156,7 +158,8 @@ final class MetricsTest {
         @Override public String name() { return name; }
         @Override public String sourceType() { return type; }
         @Override public boolean isRunning() { return running; }
-        @Override public void start(Predicate<FlowFile> ingest) { running = true; }
+        @Override public void start(@NotNull Function1<? super FlowFile, Boolean> ingest) { running = true; }
         @Override public void stop() { running = false; }
+
     }
 }

@@ -1,5 +1,7 @@
 package zincflow.fabric;
 
+import kotlin.jvm.functions.Function1;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import zincflow.core.ComponentState;
 import zincflow.core.FlowFile;
@@ -16,6 +18,7 @@ import zincflow.providers.ProvenanceProvider;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -35,9 +38,9 @@ final class ProviderWiringTest {
         prov.enable();
         context.addProvider(prov);
 
-        Processor noop = ff -> ProcessorResult.single(ff);
+        Processor noop = ProcessorResult.Single.Companion::invoke;
         var pipeline = new Pipeline(singleNoop(noop), Pipeline.DEFAULT_MAX_HOPS, null, context, null);
-        pipeline.ingest(FlowFile.create(new byte[0], Map.of()));
+        pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
 
         assertEquals(1, prov.size());
         assertEquals(ProvenanceProvider.EventType.PROCESSED, prov.getRecent(1).get(0).type);
@@ -46,12 +49,12 @@ final class ProviderWiringTest {
     @Test
     void disabledProcessorShortCircuits() {
         var tripped = new AtomicBoolean(false);
-        Processor guarded = ff -> { tripped.set(true); return ProcessorResult.single(ff); };
+        Processor guarded = ff -> { tripped.set(true); return ProcessorResult.Single.Companion.invoke(ff); };
 
         var pipeline = new Pipeline(singleNoop(guarded));
         pipeline.recordProcessorDef("p", "Guarded", Map.of(), List.of());
         assertTrue(pipeline.disableProcessor("p"));
-        pipeline.ingest(FlowFile.create(new byte[0], Map.of()));
+        pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
 
         assertFalse(tripped.get(), "disabled processor must not run");
         assertEquals(ComponentState.DISABLED, pipeline.processorState("p"));
@@ -60,15 +63,15 @@ final class ProviderWiringTest {
     @Test
     void enableProcessorReversesDisable() {
         var runs = new AtomicBoolean(false);
-        Processor p = ff -> { runs.set(true); return ProcessorResult.single(ff); };
+        Processor p = ff -> { runs.set(true); return ProcessorResult.Single.Companion.invoke(ff); };
 
         var pipeline = new Pipeline(singleNoop(p));
         pipeline.disableProcessor("p");
-        pipeline.ingest(FlowFile.create(new byte[0], Map.of())); // dropped
+        pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of())); // dropped
         assertFalse(runs.get());
 
         pipeline.enableProcessor("p");
-        pipeline.ingest(FlowFile.create(new byte[0], Map.of()));
+        pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
         assertTrue(runs.get());
     }
 
@@ -80,7 +83,7 @@ final class ProviderWiringTest {
         context.addProvider(logging);
         context.registerDependent("logging", "logger");
 
-        Processor logger = ff -> ProcessorResult.single(ff);
+        Processor logger = ProcessorResult.Single.Companion::invoke;
         var graph = new PipelineGraph(Map.of("logger", logger), Map.of(), List.of("logger"));
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, null, context, null);
 
@@ -96,11 +99,11 @@ final class ProviderWiringTest {
     @Test
     void addProcessorUsesRegistry() {
         var registry = new Registry();
-        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, null, registry);
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, null, registry);
 
         assertTrue(pipeline.addProcessor("log", "LogAttribute",
                 Map.of("prefix", "[x] "), List.of(), Map.of()));
-        assertTrue(pipeline.graph().processors().containsKey("log"));
+        assertTrue(pipeline.graph().getProcessors().containsKey("log"));
         assertEquals("LogAttribute", pipeline.processorType("log"));
         assertEquals(ComponentState.ENABLED, pipeline.processorState("log"));
 
@@ -110,13 +113,13 @@ final class ProviderWiringTest {
         assertFalse(pipeline.addProcessor("mystery", "NoSuchType", Map.of(), List.of(), Map.of()));
 
         assertTrue(pipeline.removeProcessor("log"));
-        assertFalse(pipeline.graph().processors().containsKey("log"));
+        assertFalse(pipeline.graph().getProcessors().containsKey("log"));
         assertFalse(pipeline.removeProcessor("log")); // already gone
     }
 
     @Test
     void sourceLifecycleMirrorsStartStop() {
-        var pipeline = new Pipeline(PipelineGraph.empty());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty());
         var fake = new FakeSource("inbox", "http");
         pipeline.addSource(fake);
 
@@ -157,8 +160,9 @@ final class ProviderWiringTest {
         FakeSource(String name, String type) { this.name = name; this.type = type; }
         @Override public String name() { return name; }
         @Override public String sourceType() { return type; }
+        @Override public void start(@NotNull Function1<? super FlowFile, Boolean> ingest) { running = true; }
         @Override public boolean isRunning() { return running; }
-        @Override public void start(java.util.function.Predicate<zincflow.core.FlowFile> ingest) { running = true; }
         @Override public void stop() { running = false; }
+
     }
 }

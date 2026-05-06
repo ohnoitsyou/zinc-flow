@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicLong
 </pre> * 
  * 
  * Mirrors zinc-flow-csharp's GenerateFlowFile. */
-class GenerateFlowFile(
+class GenerateFlowFile @JvmOverloads constructor(
     name: String,
     pollIntervalMillis: Long,
     content: String?,

@@ -27,20 +27,20 @@ final class GetFileTest {
         List<FlowFile> batch = src.poll();
 
         assertEquals(1, batch.size());
-        FlowFile ff = batch.get(0);
-        assertEquals("hello.txt", ff.attributes().get("filename"));
+        FlowFile ff = batch.getFirst();
+        assertEquals("hello.txt", ff.getAttributes().get("filename"));
         assertEquals(dir.resolve("hello.txt").toAbsolutePath().toString(),
-                ff.attributes().get("path"));
-        assertEquals("file", ff.attributes().get("source"));
-        assertEquals("8", ff.attributes().get("size"));
+                ff.getAttributes().get("path"));
+        assertEquals("file", ff.getAttributes().get("source"));
+        assertEquals("8", ff.getAttributes().get("size"));
         assertArrayEquals("hi there".getBytes(StandardCharsets.UTF_8),
-                ((RawContent) ff.content).bytes);
+                ((RawContent) ff.getContent()).getBytes());
     }
 
     @Test
     void unpacksV3BundleIntoMultipleFlowFiles(@TempDir Path dir) throws Exception {
-        FlowFile ff1 = FlowFile.create("a".getBytes(), Map.of("k1", "v1"));
-        FlowFile ff2 = FlowFile.create("bb".getBytes(), Map.of("k2", "v2"));
+        FlowFile ff1 = FlowFile.Companion.create("a".getBytes(), Map.of("k1", "v1"));
+        FlowFile ff2 = FlowFile.Companion.create("bb".getBytes(), Map.of("k2", "v2"));
         byte[] bundle = FlowFileV3.packMultiple(List.of(ff1, ff2),
                 List.of("a".getBytes(), "bb".getBytes()));
         Files.write(dir.resolve("bundle.bin"), bundle);
@@ -49,17 +49,17 @@ final class GetFileTest {
         List<FlowFile> batch = src.poll();
 
         assertEquals(2, batch.size());
-        assertEquals("v1", batch.get(0).attributes().get("k1"));
-        assertEquals("v2", batch.get(1).attributes().get("k2"));
-        assertEquals("0", batch.get(0).attributes().get("v3.frame.index"));
-        assertEquals("2", batch.get(0).attributes().get("v3.frame.count"));
-        assertEquals("bundle.bin", batch.get(0).attributes().get("filename"));
+        assertEquals("v1", batch.get(0).getAttributes().get("k1"));
+        assertEquals("v2", batch.get(1).getAttributes().get("k2"));
+        assertEquals("0", batch.get(0).getAttributes().get("v3.frame.index"));
+        assertEquals("2", batch.get(0).getAttributes().get("v3.frame.count"));
+        assertEquals("bundle.bin", batch.getFirst().getAttributes().get("filename"));
     }
 
     @Test
     void acceptedFilesMoveToProcessedOnlyAfterAllFramesIngested(@TempDir Path dir) throws Exception {
-        FlowFile a = FlowFile.create("a".getBytes(), Map.of());
-        FlowFile b = FlowFile.create("b".getBytes(), Map.of());
+        FlowFile a = FlowFile.Companion.create("a".getBytes(), Map.of());
+        FlowFile b = FlowFile.Companion.create("b".getBytes(), Map.of());
         byte[] bundle = FlowFileV3.packMultiple(List.of(a, b),
                 List.of("a".getBytes(), "b".getBytes()));
         Path src = dir.resolve("two.bin");
@@ -100,6 +100,6 @@ final class GetFileTest {
         var src = new GetFile("file", dir, "*.json", 1000, true);
         List<FlowFile> batch = src.poll();
         assertEquals(1, batch.size());
-        assertEquals("a.json", batch.get(0).attributes().get("filename"));
+        assertEquals("a.json", batch.getFirst().getAttributes().get("filename"));
     }
 }

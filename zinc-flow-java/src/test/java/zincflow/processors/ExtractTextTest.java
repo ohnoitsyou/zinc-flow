@@ -17,7 +17,7 @@ final class ExtractTextTest {
 
     private static FlowFile single(ProcessorResult result) {
         return switch (result) {
-            case ProcessorResult.Single(FlowFile ff) -> ff;
+            case ProcessorResult.Single ff -> ff.flowFile;
             default -> {
                 fail("expected Single, got " + result);
                 yield null;
@@ -31,29 +31,32 @@ final class ExtractTextTest {
                 "order=(?<orderId>\\d+) user=(?<user>\\w+)",
                 "",
                 null);
-        var ff = FlowFile.create("order=42 user=alice".getBytes(StandardCharsets.UTF_8), Map.of());
+        var ff = FlowFile.Companion.create("order=42 user=alice".getBytes(StandardCharsets.UTF_8), Map.of());
         var out = single(proc.process(ff));
-        assertEquals("42", out.attributes().get("orderId"));
-        assertEquals("alice", out.attributes().get("user"));
+        assert out != null;
+        assertEquals("42", out.getAttributes().get("orderId"));
+        assertEquals("alice", out.getAttributes().get("user"));
     }
 
     @Test
     void positionalGroupsMappedViaGroupNames() {
         var proc = new ExtractText("(\\w+)@(\\w+\\.\\w+)", "localpart, domain", null);
-        var ff = FlowFile.create("contact: bob@example.com".getBytes(StandardCharsets.UTF_8), Map.of());
+        var ff = FlowFile.Companion.create("contact: bob@example.com".getBytes(StandardCharsets.UTF_8), Map.of());
         var out = single(proc.process(ff));
-        assertEquals("bob", out.attributes().get("localpart"));
-        assertEquals("example.com", out.attributes().get("domain"));
+        assert out != null;
+        assertEquals("bob", out.getAttributes().get("localpart"));
+        assertEquals("example.com", out.getAttributes().get("domain"));
     }
 
     @Test
     void noMatchPassesFlowFileThroughUnchanged() {
         var proc = new ExtractText("NOMATCH-(\\d+)", "", null);
-        var ff = FlowFile.create("payload".getBytes(StandardCharsets.UTF_8),
+        var ff = FlowFile.Companion.create("payload".getBytes(StandardCharsets.UTF_8),
                 Map.of("preserved", "yes"));
         var out = single(proc.process(ff));
         assertSame(ff, out, "no-match branch should pass the original FlowFile through unchanged");
-        assertEquals("yes", out.attributes().get("preserved"));
+        assert out != null;
+        assertEquals("yes", out.getAttributes().get("preserved"));
     }
 
     @Test
@@ -62,15 +65,16 @@ final class ExtractTextTest {
         byte[] payload = "x=7".getBytes(StandardCharsets.UTF_8);
         String claimId = store.store(payload);
         var proc = new ExtractText("x=(?<x>\\d+)", "", store);
-        var ff = FlowFile.create(new ClaimContent(claimId, payload.length), Map.of());
+        var ff = FlowFile.Companion.create(new ClaimContent(claimId, payload.length), Map.of());
         var out = single(proc.process(ff));
-        assertEquals("7", out.attributes().get("x"));
+        assert out != null;
+        assertEquals("7", out.getAttributes().get("x"));
     }
 
     @Test
     void recordContentFails() {
         var proc = new ExtractText("x=(?<x>\\d+)", "", null);
-        var ff = FlowFile.create(new RecordContent(List.of(Map.of("x", 7))), Map.of());
+        var ff = FlowFile.Companion.create(RecordContent.Companion.invoke(List.of(Map.of("x", 7)), null), Map.of());
         assertInstanceOf(ProcessorResult.Failure.class, proc.process(ff));
     }
 

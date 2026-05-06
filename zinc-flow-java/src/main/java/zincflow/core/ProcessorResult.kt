@@ -10,9 +10,10 @@ package zincflow.core
  *  * [Dropped] — terminate this branch; no downstream dispatch
  *  * [Failure] — follow "failure" connections (or log+drop if none)
  */
-sealed class ProcessorResult {
+sealed interface ProcessorResult {
     @ConsistentCopyVisibility
-    data class Single private constructor(val flowFile: FlowFile) : ProcessorResult() {
+    @JvmRecord
+    data class Single private constructor(@JvmField val flowFile: FlowFile) : ProcessorResult {
         companion object {
             operator fun invoke(flowFile: FlowFile): ProcessorResult {
                 return Single(FlowFile(flowFile.id, flowFile.attributes, flowFile.content,
@@ -22,7 +23,7 @@ sealed class ProcessorResult {
     }
 
     @ConsistentCopyVisibility
-    data class Multiple private constructor(val flowFiles: List<FlowFile>) : ProcessorResult() {
+    data class Multiple private constructor(val flowFiles: List<FlowFile>) : ProcessorResult {
         companion object {
             operator fun invoke(flowFiles: List<FlowFile>): Multiple {
                 return Multiple(flowFiles.toList())
@@ -31,7 +32,7 @@ sealed class ProcessorResult {
     }
 
     @ConsistentCopyVisibility
-    data class Routed private constructor(val route: String, val flowFile: FlowFile) : ProcessorResult() {
+    data class Routed private constructor(val route: String, val flowFile: FlowFile) : ProcessorResult {
         companion object {
             operator fun invoke(route: String, flowFile: FlowFile): Routed {
                 return Routed(route, FlowFile(flowFile.id, flowFile.attributes, flowFile.content,
@@ -44,7 +45,7 @@ sealed class ProcessorResult {
      * routing primitives (e.g. RouteRecord) that partition one incoming
      * batch into several outputs, each tagged with its route name. */
     @ConsistentCopyVisibility
-    data class MultiRouted private constructor(val outputs: List<Routed>) : ProcessorResult() {
+    data class MultiRouted private constructor(val outputs: List<Routed>) : ProcessorResult {
         companion object {
             operator fun invoke(outputs: List<Routed>): MultiRouted {
                 return MultiRouted(outputs)
@@ -52,10 +53,10 @@ sealed class ProcessorResult {
         }
     }
 
-    class Dropped : ProcessorResult() { }
+    class Dropped : ProcessorResult { }
 
     @ConsistentCopyVisibility
-    data class Failure private constructor(val reason: String, val flowFile: FlowFile) : ProcessorResult() {
+    data class Failure private constructor(val reason: String, val flowFile: FlowFile) : ProcessorResult {
         companion object {
             operator fun invoke(reason: String, flowFile: FlowFile): Failure {
                 return Failure(reason, FlowFile(flowFile.id, flowFile.attributes, flowFile.content,

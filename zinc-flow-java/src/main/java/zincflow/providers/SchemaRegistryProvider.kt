@@ -26,7 +26,8 @@ import kotlin.concurrent.Volatile
  * having v1, v2, v3, the remaining versions stay v1 + v3. */
 class SchemaRegistryProvider : Provider {
     /** Immutable record of a registered schema. */
-    data class Schema(val id: Int, val subject: String, val version: Int, val definition: String) {
+    @JvmRecord
+    data class Schema(@JvmField val id: Int, @JvmField val subject: String, @JvmField val version: Int, @JvmField val definition: String) {
         init {
             require(subject.isNotEmpty()) { "schema subject must not be blank" }
             require(version >= 1) { "schema version must be >= 1" }

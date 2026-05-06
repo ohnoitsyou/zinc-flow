@@ -83,7 +83,7 @@ final class OverlaysHttpTest {
     @Test
     void overlaysWithoutConfigLoaderReturns503() throws Exception {
         // Boot without a loader — the GET should surface 503 rather than a NPE.
-        var pipeline = new Pipeline(PipelineGraph.empty());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty());
         server = new HttpServer(pipeline).start(0);
         var resp = get("/api/overlays");
         assertEquals(503, resp.statusCode());

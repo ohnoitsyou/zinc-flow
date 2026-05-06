@@ -44,7 +44,7 @@ final class VcHttpTest {
 
     @Test
     void statusReturnsDisabledWhenProviderMissing() throws Exception {
-        var pipeline = new Pipeline(PipelineGraph.empty());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty());
         server = new HttpServer(pipeline).start(0);
         var resp = get("/api/vc/status");
         assertEquals(200, resp.statusCode());
@@ -53,7 +53,7 @@ final class VcHttpTest {
 
     @Test
     void commitRejectedWhenProviderNotEnabled() throws Exception {
-        var pipeline = new Pipeline(PipelineGraph.empty());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty());
         server = new HttpServer(pipeline).start(0);
         var resp = post("/api/vc/commit", "{\"message\":\"hi\"}");
         assertEquals(503, resp.statusCode());
@@ -66,7 +66,7 @@ final class VcHttpTest {
         var vc = new VersionControlProvider(dir, null, null, "main");
         vc.enable();
         ctx.addProvider(vc);
-        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, ctx, new Registry());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, ctx, new Registry());
         server = new HttpServer(pipeline).start(0);
         var resp = post("/api/vc/commit", "{}");
         assertEquals(400, resp.statusCode());
@@ -82,7 +82,7 @@ final class VcHttpTest {
         var vc = new VersionControlProvider(dir, null, null, "main");
         vc.enable();
         ctx.addProvider(vc);
-        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, ctx, new Registry());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, ctx, new Registry());
         server = new HttpServer(pipeline).start(0);
 
         var statusResp = get("/api/vc/status");

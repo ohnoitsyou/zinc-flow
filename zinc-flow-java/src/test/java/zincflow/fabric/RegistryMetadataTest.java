@@ -3,6 +3,7 @@ package zincflow.fabric;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
+import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -16,16 +17,17 @@ final class RegistryMetadataTest {
         var r = new Registry();
         assertFalse(r.listAll().isEmpty(), "registry is non-empty");
         for (Registry.TypeInfo info : r.listAll()) {
-            assertNotEquals("Other", info.category(),
-                    info.name + ": built-ins must declare a real category");
-            assertEquals(info.parameters().size(), info.configKeys().size(),
-                    info.name + ": configKeys mirrors parameters");
+            assert info != null;
+            assertNotEquals("Other", info.getCategory(),
+                    info.getName() + ": built-ins must declare a real category");
+            assertEquals(info.getParameters().size(), info.getConfigKeys().size(),
+                    info.getName() + ": configKeys mirrors parameters");
             var seen = new HashSet<String>();
-            for (ParamInfo p : info.parameters()) {
+            for (ParamInfo p : info.getParameters()) {
                 assertNotNull(p.name);
-                assertFalse(p.name.isEmpty(), info.name + ": param name non-empty");
+                assertFalse(p.name.isEmpty(), info.getName() + ": param name non-empty");
                 assertTrue(seen.add(p.name),
-                        info.name + ": duplicate param '" + p.name + "'");
+                        info.getName() + ": duplicate param '" + p.name + "'");
             }
         }
     }
@@ -33,14 +35,15 @@ final class RegistryMetadataTest {
     @Test
     void enumParametersHaveChoices() {
         for (Registry.TypeInfo info : new Registry().listAll()) {
-            for (ParamInfo p : info.parameters()) {
-                if (p.kind() == ParamKind.ENUM) {
-                    assertNotNull(p.choices(), info.name + "." + p.name + ": ENUM needs choices");
-                    assertFalse(p.choices().isEmpty(),
-                            info.name + "." + p.name + ": ENUM choices non-empty");
+            assert info != null;
+            for (ParamInfo p : info.getParameters()) {
+                if (p.getKind() == ParamKind.ENUM) {
+                    assertNotNull(p.getChoices(), info.getName() + "." + p.name + ": ENUM needs choices");
+                    assertFalse(Objects.requireNonNull(p.getChoices()).isEmpty(),
+                            info.getName() + "." + p.name + ": ENUM choices non-empty");
                     if (p.defaultValue != null) {
-                        assertTrue(p.choices().contains(p.defaultValue),
-                                info.name + "." + p.name + ": default '" + p.defaultValue
+                        assertTrue(p.getChoices().contains(p.defaultValue),
+                                info.getName() + "." + p.name + ": default '" + p.defaultValue
                                         + "' is in choices");
                     }
                 }
@@ -51,14 +54,15 @@ final class RegistryMetadataTest {
     @Test
     void keyValueListCarriesDelimiters() {
         for (Registry.TypeInfo info : new Registry().listAll()) {
-            for (ParamInfo p : info.parameters()) {
-                if (p.kind() == ParamKind.KEY_VALUE_LIST) {
-                    assertNotNull(p.entryDelim());
-                    assertFalse(p.entryDelim().isEmpty(),
-                            info.name + "." + p.name + ": entry delim non-empty");
-                    assertNotNull(p.pairDelim());
-                    assertFalse(p.pairDelim().isEmpty(),
-                            info.name + "." + p.name + ": pair delim non-empty");
+            assert info != null;
+            for (ParamInfo p : info.getParameters()) {
+                if (p.getKind() == ParamKind.KEY_VALUE_LIST) {
+                    assertNotNull(p.getEntryDelim());
+                    assertFalse(p.getEntryDelim().isEmpty(),
+                            info.getName() + "." + p.name + ": entry delim non-empty");
+                    assertNotNull(p.getPairDelim());
+                    assertFalse(p.getPairDelim().isEmpty(),
+                            info.getName() + "." + p.name + ": pair delim non-empty");
                 }
             }
         }
@@ -68,11 +72,11 @@ final class RegistryMetadataTest {
     void legacyConstructorStillWorks() {
         var info = new Registry.TypeInfo("X", "1.0.0", "test",
                 java.util.List.of("a", "b"), java.util.List.of("success"));
-        assertEquals("Other", info.category());
-        assertEquals(2, info.parameters().size());
-        assertEquals("a", info.parameters().get(0).name);
-        assertEquals(ParamKind.STRING, info.parameters().get(0).kind());
-        assertEquals("a", info.parameters().get(0).label());
+        assertEquals("Other", info.getCategory());
+        assertEquals(2, info.getParameters().size());
+        assertEquals("a", info.getParameters().getFirst().name);
+        assertEquals(ParamKind.STRING, info.getParameters().getFirst().getKind());
+        assertEquals("a", info.getParameters().getFirst().getLabel());
     }
 
     @Test
@@ -80,15 +84,15 @@ final class RegistryMetadataTest {
         var r = new Registry();
         var info = r.latest("RouteRecord");
         assertNotNull(info, "RouteRecord registered");
-        assertEquals("Routing", info.category());
-        assertEquals(1, info.parameters().size());
-        var routes = info.parameters().get(0);
+        assertEquals("Routing", info.getCategory());
+        assertEquals(1, info.getParameters().size());
+        var routes = info.getParameters().getFirst();
         assertEquals("routes", routes.name);
-        assertEquals(ParamKind.KEY_VALUE_LIST, routes.kind());
+        assertEquals(ParamKind.KEY_VALUE_LIST, routes.getKind());
         assertTrue(routes.required);
         assertEquals(ParamKind.EXPRESSION, routes.valueKind);
-        assertEquals(";", routes.entryDelim());
-        assertEquals(":", routes.pairDelim());
+        assertEquals(";", routes.getEntryDelim());
+        assertEquals(":", routes.getPairDelim());
         assertNotNull(routes.placeholder);
     }
 

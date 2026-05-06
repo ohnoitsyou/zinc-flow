@@ -16,9 +16,9 @@ final class ConfigOverlayTest {
         Path base = dir.resolve("config.yaml");
         Files.writeString(base, "flow:\n  entryPoints: [a]\n");
         var resolved = ConfigOverlay.load(base);
-        assertTrue(resolved.layers().stream().anyMatch(l -> "base".equals(l.role) && l.present));
-        assertTrue(resolved.layers().stream().anyMatch(l -> "local".equals(l.role) && !l.present));
-        assertTrue(resolved.layers().stream().anyMatch(l -> "secrets".equals(l.role) && !l.present));
+        assertTrue(resolved.getLayers().stream().anyMatch(l -> "base".equals(l.role) && l.present));
+        assertTrue(resolved.getLayers().stream().anyMatch(l -> "local".equals(l.role) && !l.present));
+        assertTrue(resolved.getLayers().stream().anyMatch(l -> "secrets".equals(l.role) && !l.present));
     }
 
     @Test
@@ -50,13 +50,13 @@ final class ConfigOverlayTest {
                 """);
 
         var resolved = ConfigOverlay.load(base);
-        Map<String, Object> flow = mapUnder(resolved.effective(), "flow", "processors", "put-http", "config");
+        Map<String, Object> flow = mapUnder(resolved.getEffective(), "flow", "processors", "put-http", "config");
         assertEquals("https://local.example.com", flow.get("endpoint"));
         assertEquals("SECRET_TOKEN", flow.get("token"));
 
         // Provenance: endpoint came from local, token from secrets.
-        assertEquals("local",   resolved.provenance().get("flow.processors.put-http.config.endpoint"));
-        assertEquals("secrets", resolved.provenance().get("flow.processors.put-http.config.token"));
+        assertEquals("local",   resolved.getProvenance().get("flow.processors.put-http.config.endpoint"));
+        assertEquals("secrets", resolved.getProvenance().get("flow.processors.put-http.config.token"));
     }
 
     @Test
@@ -69,8 +69,8 @@ final class ConfigOverlayTest {
         Files.writeString(secrets, "x: secret\n");
 
         var resolved = ConfigOverlay.load(base);
-        assertEquals("secret", resolved.effective().get("x"));
-        assertEquals("secrets", resolved.provenance().get("x"));
+        assertEquals("secret", resolved.getEffective().get("x"));
+        assertEquals("secrets", resolved.getProvenance().get("x"));
     }
 
     @Test
@@ -81,7 +81,7 @@ final class ConfigOverlayTest {
         Files.writeString(local, "a: local\n");
 
         var resolved = ConfigOverlay.load(base, local, null);
-        assertEquals("local", resolved.effective().get("a"));
+        assertEquals("local", resolved.getEffective().get("a"));
     }
 
     @Test
@@ -92,8 +92,8 @@ final class ConfigOverlayTest {
         Files.writeString(local, "   \n");
 
         var resolved = ConfigOverlay.load(base);
-        assertEquals("base", resolved.effective().get("a"));
-        assertEquals("base", resolved.provenance().get("a"));
+        assertEquals("base", resolved.getEffective().get("a"));
+        assertEquals("base", resolved.getProvenance().get("a"));
     }
 
     @Test

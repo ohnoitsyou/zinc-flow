@@ -16,13 +16,14 @@ import java.util.Locale
  * Supported types: boolean/bool, int/int32, long/int64, float/float32,
  * double/float64, bytes, string. Unknown types throw — matches C#. */
 object SchemaDefs {
+    @JvmStatic
     fun parse(recordName: String, fieldDefs: String): Schema? {
         if (fieldDefs.isBlank()) return null
 
         val name = recordName.ifBlank { "Record" }
         var assembler = SchemaBuilder.record(name).namespace("zincflow").fields()
 
-        for (part in fieldDefs.split(",").mapNotNull { f -> f.trim().takeIf { it.isNotEmpty() }}) {
+        for (part in fieldDefs.split(",").mapNotNull { f -> f.trim().takeIf { it.isNotEmpty() } }) {
             require(part.contains(':')) { "ConvertAvroToRecord: malformed field def '$part' — expected 'name:type'" }
             val name = part.substringBefore(':').trim()
             val type = part.substringAfter(':').trim().lowercase(Locale.getDefault())

@@ -15,9 +15,10 @@ final class RouteOnAttributeOperatorsTest {
 
     private static String route(String spec, Map<String, String> attrs) {
         var proc = new RouteOnAttribute(spec);
-        var ff = FlowFile.create(new byte[0], attrs);
+        var ff = FlowFile.Companion.create(new byte[0], attrs);
         return switch (proc.process(ff)) {
-            case ProcessorResult.Routed(String name, FlowFile ignored) -> name;
+            case ProcessorResult.Routed r -> r.getRoute();
+//            case ProcessorResult.Routed(String name, FlowFile ignored) -> name;
             case ProcessorResult r -> {
                 fail("expected Routed, got " + r);
                 yield "";

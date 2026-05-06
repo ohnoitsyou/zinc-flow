@@ -45,7 +45,7 @@ final class VirtualThreadIngestTest {
                 invocations.incrementAndGet();
                 try { Thread.sleep(SLEEP_MS); }
                 catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-                return ProcessorResult.Dropped.INSTANCE;
+                return new ProcessorResult.Dropped();
             }
         };
 

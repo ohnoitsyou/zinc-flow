@@ -24,7 +24,7 @@ final class ProvenanceProviderTest {
         prov.record(42, ProvenanceProvider.EventType.ROUTED, "router", "→ high");
         List<ProvenanceProvider.Event> events = prov.getEvents(42);
         assertEquals(1, events.size());
-        var e = events.get(0);
+        var e = events.getFirst();
         assertEquals(42, e.flowFileId);
         assertEquals(ProvenanceProvider.EventType.ROUTED, e.type);
         assertEquals("router", e.component);

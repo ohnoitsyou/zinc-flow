@@ -22,14 +22,15 @@ final class PollingSourceTest {
         List<Long> ingestedIds = new CopyOnWriteArrayList<>();
 
         PollingSource source = new PollingSource("probe", 10) {
+            @Override public boolean isRunning() { return false; }
             @Override public String sourceType() { return "probe"; }
             @Override protected List<FlowFile> poll() {
                 pollCount.incrementAndGet();
-                return List.of(FlowFile.create(new byte[] {1, 2, 3}, Map.of("seq",
+                return List.of(FlowFile.Companion.create(new byte[] {1, 2, 3}, Map.of("seq",
                         Integer.toString(pollCount.get()))));
             }
             @Override protected void onIngested(FlowFile ff) {
-                ingestedIds.add(ff.id);
+                ingestedIds.add(ff.getId());
                 ingestedOnce.countDown();
             }
         };
@@ -52,9 +53,11 @@ final class PollingSourceTest {
     void rejectedFlowFilesHitOnRejected() throws Exception {
         CountDownLatch rejected = new CountDownLatch(1);
         PollingSource source = new PollingSource("probe", 10) {
+            @Override public boolean isRunning() { return false; }
+
             @Override public String sourceType() { return "probe"; }
             @Override protected List<FlowFile> poll() {
-                return List.of(FlowFile.create(new byte[0], Map.of()));
+                return List.of(FlowFile.Companion.create(new byte[0], Map.of()));
             }
             @Override protected void onRejected(FlowFile ff) { rejected.countDown(); }
         };
@@ -66,6 +69,11 @@ final class PollingSourceTest {
     @Test
     void nonPositivePollIntervalFallsBackToDefault() {
         PollingSource source = new PollingSource("probe", 0) {
+            @Override
+            public boolean isRunning() {
+                return false;
+            }
+
             @Override public String sourceType() { return "probe"; }
             @Override protected List<FlowFile> poll() { return List.of(); }
         };
@@ -75,6 +83,11 @@ final class PollingSourceTest {
     @Test
     void doubleStartIsIdempotent() {
         PollingSource source = new PollingSource("probe", 50) {
+            @Override
+            public boolean isRunning() {
+                return false;
+            }
+
             @Override public String sourceType() { return "probe"; }
             @Override protected List<FlowFile> poll() { return List.of(); }
         };

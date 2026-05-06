@@ -30,7 +30,7 @@ final class GraphMutationHttpTest {
     void boot() {
         var registry = new Registry();
         var context = new ProcessorContext();
-        pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
+        pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
         // Seed three processors via the admin API semantics so they're
         // routable once edges land.
         pipeline.addProcessor("a", "LogAttribute", java.util.Map.of(), java.util.List.of(), java.util.Map.of());
@@ -70,7 +70,7 @@ final class GraphMutationHttpTest {
 
     @Test
     void addConnectionDuplicate409() throws Exception {
-        assertTrue(pipeline.addConnection("a", "success", "b").ok);
+        assertTrue(pipeline.addConnection("a", "success", "b").ok());
         var resp = send("POST", "/api/connections",
                 "{\"from\":\"a\",\"relationship\":\"success\",\"to\":\"b\"}");
         assertEquals(409, resp.statusCode());
@@ -86,7 +86,7 @@ final class GraphMutationHttpTest {
 
     @Test
     void removeConnectionOk() throws Exception {
-        assertTrue(pipeline.addConnection("a", "success", "b").ok);
+        assertTrue(pipeline.addConnection("a", "success", "b").ok());
         var resp = send("DELETE", "/api/connections",
                 "{\"from\":\"a\",\"relationship\":\"success\",\"to\":\"b\"}");
         assertEquals(200, resp.statusCode());
@@ -128,7 +128,7 @@ final class GraphMutationHttpTest {
         var resp = send("PUT", "/api/entrypoints",
                 "{\"names\":[\"b\",\"c\"]}");
         assertEquals(200, resp.statusCode());
-        assertEquals(java.util.List.of("b", "c"), pipeline.graph().entryPoints());
+        assertEquals(java.util.List.of("b", "c"), pipeline.graph().getEntryPoints());
     }
 
     @Test

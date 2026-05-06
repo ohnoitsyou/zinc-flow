@@ -1,5 +1,7 @@
 package zincflow.fabric;
 
+import kotlin.jvm.functions.Function1;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import zincflow.core.FlowFile;
 import zincflow.core.Source;
@@ -39,11 +41,11 @@ final class SourceRegistryTest {
         r.register(new SourceRegistry.TypeInfo("A", "2.0.0", "", List.of()), (n, c) -> new NoopSource(n));
         r.register(new SourceRegistry.TypeInfo("A", "1.0.0", "", List.of()), (n, c) -> new NoopSource(n));
         var all = r.listAll();
-        assertEquals("A", all.get(0).name);
-        assertEquals("1.0.0", all.get(0).version);
-        assertEquals("A", all.get(1).name);
-        assertEquals("2.0.0", all.get(1).version);
-        assertEquals("B", all.get(2).name);
+        assertEquals("A", all.get(0).getName());
+        assertEquals("1.0.0", all.get(0).getVersion());
+        assertEquals("A", all.get(1).getName());
+        assertEquals("2.0.0", all.get(1).getVersion());
+        assertEquals("B", all.get(2).getName());
     }
 
     @Test
@@ -65,7 +67,7 @@ final class SourceRegistryTest {
         @Override public String name() { return name; }
         @Override public String sourceType() { return "Probe"; }
         @Override public boolean isRunning() { return false; }
-        @Override public void start(Predicate<FlowFile> ingest) { /* no-op */ }
+        @Override public void start(@NotNull Function1<? super FlowFile, Boolean> ingest) { /* no-op */ }
         @Override public void stop() { /* no-op */ }
     }
 }

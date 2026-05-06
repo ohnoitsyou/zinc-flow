@@ -20,10 +20,10 @@ final class ContentHelpersTest {
         byte[] big = new byte[ContentHelpers.DEFAULT_CLAIM_THRESHOLD + 1];
         Content c = ContentHelpers.maybeOffload(store, big);
 
-        if (c instanceof ClaimContent()) {
-            assertEquals(big.length, c.size());
+        if (c instanceof ClaimContent claim) {
+            assertEquals(big.length, claim.size());
             assertEquals(1, store.size());
-            assertArrayEquals(big, store.retrieve(((ClaimContent) c).claimId));
+            assertArrayEquals(big, store.retrieve(claim.claimId));
         } else {
             fail("expected ClaimContent, got " + c.getClass().getSimpleName());
         }

@@ -38,6 +38,7 @@ object ConfigOverlay {
     /** Explicit paths — used by tests and the admin API's
      * `PUT /api/overlays/secrets` write-through path. */
     /** Default behaviour — env vars first, sibling files as fallback. */
+    @JvmStatic
     @JvmOverloads
     @Throws(IOException::class)
     fun load(

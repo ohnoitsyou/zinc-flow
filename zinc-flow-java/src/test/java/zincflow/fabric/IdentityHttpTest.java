@@ -24,7 +24,7 @@ final class IdentityHttpTest {
     @Test
     void identityEndpointReportsNodeIdAndPort() throws Exception {
         var identity = new NodeIdentity("node-42", "my-host", "9.0.0");
-        var pipeline = new Pipeline(PipelineGraph.empty());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty());
         server = new HttpServer(pipeline, null, null, null, null, identity).start(0);
 
         var resp = http.send(
@@ -42,7 +42,7 @@ final class IdentityHttpTest {
 
     @Test
     void identityEndpointReturns503WhenNotWired() throws Exception {
-        var pipeline = new Pipeline(PipelineGraph.empty());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty());
         server = new HttpServer(pipeline).start(0);
         var resp = http.send(
                 HttpRequest.newBuilder(URI.create("http://localhost:" + server.port() + "/api/identity"))

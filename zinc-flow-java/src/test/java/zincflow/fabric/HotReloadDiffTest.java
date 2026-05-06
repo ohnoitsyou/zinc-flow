@@ -34,9 +34,9 @@ final class HotReloadDiffTest {
         var pipeline = new Pipeline(first);
 
         var second = loader.load(BASE_YAML);
-        assertSame(first.processors().get("a"), second.processors().get("a"),
+        assertSame(first.getProcessors().get("a"), second.getProcessors().get("a"),
                 "unchanged spec should reuse processor instance");
-        assertSame(first.processors().get("b"), second.processors().get("b"));
+        assertSame(first.getProcessors().get("b"), second.getProcessors().get("b"));
 
         var diff = pipeline.applyReload(second);
         assertEquals(0, diff.total());
@@ -51,8 +51,8 @@ final class HotReloadDiffTest {
         // Change b's config value — should force b to rebuild, leave a alone.
         var mutated = BASE_YAML.replace("value: one", "value: two");
         var second = loader.load(mutated);
-        assertSame(first.processors().get("a"), second.processors().get("a"));
-        assertNotSame(first.processors().get("b"), second.processors().get("b"));
+        assertSame(first.getProcessors().get("a"), second.getProcessors().get("a"));
+        assertNotSame(first.getProcessors().get("b"), second.getProcessors().get("b"));
 
         var diff = pipeline.applyReload(second);
         assertEquals(0, diff.added);

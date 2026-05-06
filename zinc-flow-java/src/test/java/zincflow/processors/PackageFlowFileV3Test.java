@@ -19,43 +19,43 @@ final class PackageFlowFileV3Test {
 
     @Test
     void packUnpackRoundTripRestoresAttributesAndContent() {
-        var ff = FlowFile.create("the payload".getBytes(StandardCharsets.UTF_8),
+        var ff = FlowFile.Companion.create("the payload".getBytes(StandardCharsets.UTF_8),
                 Map.of("tenant", "acme", "filename", "doc.txt"));
 
-        if (!(new PackageFlowFileV3().process(ff) instanceof ProcessorResult.Single(FlowFile packed))) {
+        if (!(new PackageFlowFileV3().process(ff) instanceof ProcessorResult.Single single)) {
             fail("pack: expected Single");
             return;
         }
-        assertEquals("application/flowfile-v3", packed.attributes().get("http.content.type"));
-        assertEquals("true", packed.attributes().get("v3.packaged"));
-        assertInstanceOf(RawContent.class, packed.content);
+        assertEquals("application/flowfile-v3", single.flowFile.getAttributes().get("http.content.type"));
+        assertEquals("true", single.flowFile.getAttributes().get("v3.packaged"));
+        assertInstanceOf(RawContent.class, single.flowFile.getContent());
 
-        if (!(new UnpackageFlowFileV3().process(packed) instanceof ProcessorResult.Single(FlowFile restored))) {
+        if (!(new UnpackageFlowFileV3().process(single.flowFile) instanceof ProcessorResult.Single singleRestored )) {
             fail("unpack: expected Single");
             return;
         }
-        assertEquals("acme", restored.attributes().get("tenant"));
-        assertEquals("doc.txt", restored.attributes().get("filename"));
-        if (restored.content instanceof RawContent(byte[] bytes)) {
-            assertEquals("the payload", new String(bytes, StandardCharsets.UTF_8));
+        assertEquals("acme", singleRestored.flowFile.getAttributes().get("tenant"));
+        assertEquals("doc.txt", singleRestored.flowFile.getAttributes().get("filename"));
+        if (singleRestored.flowFile.getContent() instanceof RawContent rc) {
+            assertEquals("the payload", new String(rc.getBytes(), StandardCharsets.UTF_8));
         } else {
-            fail("expected RawContent after unpack, got " + restored.content.getClass().getSimpleName());
+            fail("expected RawContent after unpack, got " + singleRestored.flowFile.getContent().getClass().getSimpleName());
         }
     }
 
     @Test
     void packageRejectsRecordContent() {
-        var ff = FlowFile.create(new RecordContent(List.of(Map.of("k", 1))), Map.of());
+        var ff = FlowFile.Companion.create(RecordContent.Companion.invoke(List.of(Map.of("k", 1)), null), Map.of());
         assertInstanceOf(ProcessorResult.Failure.class, new PackageFlowFileV3().process(ff));
     }
 
     @Test
     void unpackageFailsOnNonV3Input() {
-        var ff = FlowFile.create("not v3 framed".getBytes(), Map.of());
+        var ff = FlowFile.Companion.create("not v3 framed".getBytes(), Map.of());
         var result = new UnpackageFlowFileV3().process(ff);
-        if (result instanceof ProcessorResult.Failure(String reason, FlowFile ignored)) {
-            assertTrue(reason.toLowerCase().contains("magic"),
-                    "expected magic-related failure, got: " + reason);
+        if (result instanceof ProcessorResult.Failure failure) {// (String reason, FlowFile ignored)) {
+            assertTrue(failure.getReason().toLowerCase().contains("magic"),
+                    "expected magic-related failure, got: " + failure.getReason());
         } else {
             fail("expected Failure, got " + result);
         }
@@ -63,18 +63,18 @@ final class PackageFlowFileV3Test {
 
     @Test
     void unpackageEmitsMultipleWhenStreamContainsSeveral() {
-        var a = FlowFile.create("A".getBytes(), Map.of("i", "0"));
-        var b = FlowFile.create("BB".getBytes(), Map.of("i", "1"));
+        var a = FlowFile.Companion.create("A".getBytes(), Map.of("i", "0"));
+        var b = FlowFile.Companion.create("BB".getBytes(), Map.of("i", "1"));
         byte[] packed = FlowFileV3.packMultiple(
                 List.of(a, b),
                 List.of("A".getBytes(), "BB".getBytes()));
-        var combined = FlowFile.create(packed, Map.of());
+        var combined = FlowFile.Companion.create(packed, Map.of());
 
         var result = new UnpackageFlowFileV3().process(combined);
-        if (result instanceof ProcessorResult.Multiple(List<FlowFile> ffs)) {
-            assertEquals(2, ffs.size());
-            assertEquals("0", ffs.get(0).attributes().get("i"));
-            assertEquals("1", ffs.get(1).attributes().get("i"));
+        if (result instanceof ProcessorResult.Multiple multiple) {
+            assertEquals(2, multiple.getFlowFiles().size());
+            assertEquals("0", multiple.getFlowFiles().getFirst().getAttributes().get("i"));
+            assertEquals("1", multiple.getFlowFiles().get(1).getAttributes().get("i"));
         } else {
             fail("expected Multiple, got " + result);
         }
@@ -85,23 +85,24 @@ final class PackageFlowFileV3Test {
         var store = new MemoryContentStore();
         byte[] payload = "stored".getBytes(StandardCharsets.UTF_8);
         String id = store.store(payload);
-        var ff = FlowFile.create(new ClaimContent(id, payload.length), Map.of("k", "v"));
+        var ff = FlowFile.Companion.create(new ClaimContent(id, payload.length), Map.of("k", "v"));
 
-        if (!(new PackageFlowFileV3(store).process(ff) instanceof ProcessorResult.Single(FlowFile packed))) {
+        if (!(new PackageFlowFileV3(store).process(ff) instanceof ProcessorResult.Single single)) {
             fail("expected Single from pack");
             return;
         }
-        byte[] packedBytes = switch (packed.content) {
-            case RawContent raw -> raw.bytes;
+        byte[] packedBytes = switch (single.flowFile.getContent()) {
+            case RawContent raw -> raw.getBytes();
             default -> { fail("pack output should be raw"); yield new byte[0]; }
         };
 
         var restored = FlowFileV3.unpack(packedBytes, 0).flowFile;
-        assertEquals("v", restored.attributes().get("k"));
-        if (restored.content instanceof RawContent(byte[] out)) {
-            assertEquals("stored", new String(out, StandardCharsets.UTF_8));
+        assert restored != null;
+        assertEquals("v", restored.getAttributes().get("k"));
+        if (restored.getContent() instanceof RawContent rc) {
+            assertEquals("stored", new String(rc.getBytes(), StandardCharsets.UTF_8));
         } else {
-            fail("expected RawContent, got " + restored.content.getClass().getSimpleName());
+            fail("expected RawContent, got " + restored.getContent().getClass().getSimpleName());
         }
     }
 }

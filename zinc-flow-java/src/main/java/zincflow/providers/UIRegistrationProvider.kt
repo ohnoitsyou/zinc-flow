@@ -31,7 +31,7 @@ import kotlin.concurrent.Volatile
  * The provider's lifecycle controls the heartbeat: `enable()`
  * starts the scheduled task (fire-once-immediately + every 30 s
  * afterward), `disable()` / `shutdown()` cancel it. */
-class UIRegistrationProvider(
+class UIRegistrationProvider @JvmOverloads constructor(
     private val targetUrl: String,
     private val identitySupplier: () -> MutableMap<String, Any>,
     private val heartbeatSeconds: Long = DEFAULT_HEARTBEAT_SECONDS,

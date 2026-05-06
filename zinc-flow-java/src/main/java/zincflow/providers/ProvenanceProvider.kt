@@ -24,11 +24,11 @@ class ProvenanceProvider @JvmOverloads constructor(val capacity: Int = DEFAULT_C
 
     @JvmRecord
     data class Event(
-        val flowFileId: Long,
-        val type: EventType?,
-        val component: String?,
-        val details: String?,
-        val timestampMillis: Long
+        @JvmField val flowFileId: Long,
+        @JvmField val type: EventType?,
+        @JvmField val component: String?,
+        @JvmField val details: String?,
+        @JvmField val timestampMillis: Long
     ) {
         companion object {
             val EMPTY = Event(-1, EventType.UNKNOWN, "", "", 0)

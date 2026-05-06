@@ -30,14 +30,14 @@ final class ProcessorTypesHttpTest {
                 "Toy", "1.0.0", "A sample processor",
                 java.util.List.of("key", "value"),
                 java.util.List.of("success", "failure")),
-                (cfg, ctx) -> ff -> ProcessorResult.Dropped );
+                (cfg, ctx) -> ff -> new ProcessorResult.Dropped() );
         registry.register(new Registry.TypeInfo(
                 "Toy", "2.0.0", "Revised sample processor",
                 java.util.List.of("key", "value", "mode"),
                 java.util.List.of("success", "failure", "skipped")),
-                (cfg, ctx) -> ff -> ProcessorResult.dropped());
+                (cfg, ctx) -> ff -> new ProcessorResult.Dropped());
 
-        var pipeline = new Pipeline(PipelineGraph.empty(), Pipeline.DEFAULT_MAX_HOPS, null,
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null,
                 new ProcessorContext(), registry);
         server = new HttpServer(pipeline).start(0);
     }
