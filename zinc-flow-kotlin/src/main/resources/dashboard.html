@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zinc-flow dashboard</title>
+<script src="https://unpkg.com/@dagrejs/dagre@1.1.4/dist/dagre.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0f0f1a; color: #e0e0e0; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 13px; }
+
+/* Header */
+.header { background: #16162a; border-bottom: 1px solid #2a2a4a; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 16px; font-weight: 600; color: #00d2ff; }
+.header .stats { display: flex; gap: 24px; }
+.stat { display: flex; flex-direction: column; align-items: center; }
+.stat-value { font-size: 18px; font-weight: 700; color: #fff; }
+.stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+
+/* Sources panel */
+.sources { background: #16162a; border-bottom: 1px solid #2a2a4a; padding: 8px 20px; display: flex; gap: 16px; align-items: center; }
+.source-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; background: #1a1a3e; font-size: 11px; }
+.source-dot { width: 8px; height: 8px; border-radius: 50%; }
+.source-dot.running { background: #4ecca3; box-shadow: 0 0 6px #4ecca3; }
+.source-dot.stopped { background: #666; }
+
+/* Graph container */
+.graph-container { width: 100%; height: calc(100vh - 90px); overflow: auto; position: relative; }
+svg { display: block; }
+
+/* Node styles */
+.node rect { rx: 8; ry: 8; stroke-width: 2; cursor: pointer; transition: filter 0.2s; }
+.node rect:hover { filter: brightness(1.3); }
+.node-name { font-size: 12px; font-weight: 600; fill: #fff; }
+.node-type { font-size: 10px; fill: #888; }
+.node-stats { font-size: 11px; }
+.node-processed { fill: #4ecca3; }
+.node-errors { fill: #e74c3c; }
+.node-entry-badge { font-size: 9px; fill: #00d2ff; font-weight: 600; }
+
+/* Edge styles */
+.edge path { fill: none; stroke-width: 2; }
+.edge.success path { stroke: #4ecca3; }
+.edge.failure path { stroke: #e74c3c; stroke-dasharray: 6 3; }
+.edge.custom path { stroke: #f0a500; }
+.edge-label { font-size: 10px; fill: #888; }
+marker { fill: #4ecca3; }
+marker.failure { fill: #e74c3c; }
+
+/* Loading */
+.loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>zinc-flow</h1>
+  <div class="stats" id="stats">
+    <div class="stat"><span class="stat-value" id="stat-processed">-</span><span class="stat-label">processed</span></div>
+    <div class="stat"><span class="stat-value" id="stat-active">-</span><span class="stat-label">active</span></div>
+    <div class="stat"><span class="stat-value" id="stat-processors">-</span><span class="stat-label">processors</span></div>
+  </div>
+</div>
+<div class="sources" id="sources"></div>
+<div class="graph-container">
+  <svg id="graph"><defs id="defs"></defs></svg>
+  <div class="loading" id="loading">connecting...</div>
+</div>
+
+<script>
+const POLL_MS = 2000;
+const NODE_W = 200, NODE_H = 68, NODE_PAD = 40;
+let lastTopology = '';
+
+async function fetchFlow() {
+  try {
+    const resp = await fetch('/api/flow');
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch { return null; }
+}
+
+function topologyKey(data) {
+  // Only re-layout if processors or connections change
+  const procs = data.processors.map(p => p.name).sort().join(',');
+  const conns = data.processors.map(p => {
+    const c = p.connections || {};
+    return Object.entries(c).map(([r, ts]) => `${p.name}:${r}:${ts.join(',')}`).join('|');
+  }).join(';');
+  return procs + '||' + conns;
+}
+
+function layoutGraph(data) {
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: 'TB', ranksep: 60, nodesep: 40, marginx: 30, marginy: 30 });
+  g.setDefaultEdgeLabel(() => ({}));
+
+  const entrySet = new Set(data.entryPoints || []);
+
+  data.processors.forEach(p => {
+    g.setNode(p.name, { width: NODE_W, height: NODE_H, processor: p, isEntry: entrySet.has(p.name) });
+  });
+
+  const edges = [];
+  data.processors.forEach(p => {
+    if (!p.connections) return;
+    Object.entries(p.connections).forEach(([rel, targets]) => {
+      targets.forEach(t => {
+        g.setEdge(p.name, t, { relationship: rel });
+        edges.push({ from: p.name, to: t, rel });
+      });
+    });
+  });
+
+  dagre.layout(g);
+  return { graph: g, edges };
+}
+
+function isSink(proc, allConnections) {
+  const c = proc.connections;
+  if (!c) return true;
+  return Object.values(c).every(targets => targets.length === 0);
+}
+
+function formatNum(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function renderGraph(data, forceLayout) {
+  const svg = document.getElementById('graph');
+  const defs = document.getElementById('defs');
+
+  // Arrow markers
+  defs.innerHTML = `
+    <marker id="arrow-success" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4ecca3"/>
+    </marker>
+    <marker id="arrow-failure" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#e74c3c"/>
+    </marker>
+    <marker id="arrow-custom" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#f0a500"/>
+    </marker>
+  `;
+
+  const topo = topologyKey(data);
+  const needLayout = forceLayout || topo !== lastTopology;
+  lastTopology = topo;
+
+  if (!needLayout) {
+    // Just update stats in place
+    data.processors.forEach(p => {
+      const processed = p.stats?.processed || 0;
+      const errors = p.stats?.errors || 0;
+      const procEl = document.getElementById(`stat-proc-${p.name}`);
+      if (procEl) procEl.textContent = formatNum(processed);
+      const errEl = document.getElementById(`stat-err-${p.name}`);
+      if (errEl) errEl.textContent = errors > 0 ? formatNum(errors) : '';
+      // Update node color
+      const rect = document.getElementById(`rect-${p.name}`);
+      if (rect) {
+        rect.setAttribute('fill', errors > 0 ? '#2a1a1a' : p.state === 'ENABLED' ? '#16213e' : '#1a1a2e');
+        rect.setAttribute('stroke', errors > 0 ? '#e74c3c' : p.state === 'ENABLED' ? '#0f3460' : '#333');
+      }
+    });
+    return;
+  }
+
+  // Full re-render
+  const { graph: g, edges } = layoutGraph(data);
+  const graphInfo = g.graph();
+  svg.setAttribute('width', graphInfo.width + 60);
+  svg.setAttribute('height', graphInfo.height + 60);
+
+  // Clear everything except defs
+  while (svg.children.length > 1) svg.removeChild(svg.lastChild);
+
+  const entrySet = new Set(data.entryPoints || []);
+
+  // Draw edges first (behind nodes)
+  edges.forEach(({ from, to, rel }) => {
+    const edge = g.edge(from, to);
+    if (!edge || !edge.points) return;
+    const points = edge.points;
+    const edgeClass = rel === 'failure' ? 'failure' : (rel === 'success' ? 'success' : 'custom');
+    const markerId = `arrow-${edgeClass}`;
+
+    // Build path
+    let d = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+      d += ` L ${points[i].x} ${points[i].y}`;
+    }
+
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.setAttribute('class', `edge ${edgeClass}`);
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('marker-end', `url(#${markerId})`);
+    group.appendChild(path);
+
+    // Edge label at midpoint
+    if (rel !== 'success') {
+      const mid = points[Math.floor(points.length / 2)];
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', mid.x + 8);
+      label.setAttribute('y', mid.y - 6);
+      label.setAttribute('class', 'edge-label');
+      label.textContent = rel;
+      group.appendChild(label);
+    }
+
+    svg.appendChild(group);
+  });
+
+  // Draw nodes
+  g.nodes().forEach(name => {
+    const node = g.node(name);
+    const p = node.processor;
+    const x = node.x - NODE_W / 2;
+    const y = node.y - NODE_H / 2;
+    const processed = p.stats?.processed || 0;
+    const errors = p.stats?.errors || 0;
+    const hasErrors = errors > 0;
+    const isEntry = entrySet.has(name);
+    const sink = isSink(p);
+
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.setAttribute('class', 'node');
+    group.setAttribute('transform', `translate(${x}, ${y})`);
+
+    // Background rect
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('id', `rect-${name}`);
+    rect.setAttribute('width', NODE_W);
+    rect.setAttribute('height', NODE_H);
+    rect.setAttribute('fill', hasErrors ? '#2a1a1a' : p.state === 'ENABLED' ? '#16213e' : '#1a1a2e');
+    rect.setAttribute('stroke', hasErrors ? '#e74c3c' : isEntry ? '#00d2ff' : p.state === 'ENABLED' ? '#0f3460' : '#333');
+    group.appendChild(rect);
+
+    // Entry badge
+    if (isEntry) {
+      const badge = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      badge.setAttribute('x', NODE_W - 8);
+      badge.setAttribute('y', 14);
+      badge.setAttribute('text-anchor', 'end');
+      badge.setAttribute('class', 'node-entry-badge');
+      badge.textContent = 'ENTRY';
+      group.appendChild(badge);
+    }
+
+    // Sink badge
+    if (sink) {
+      const badge = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      badge.setAttribute('x', NODE_W - 8);
+      badge.setAttribute('y', 14);
+      badge.setAttribute('text-anchor', 'end');
+      badge.setAttribute('class', 'node-entry-badge');
+      badge.setAttribute('fill', '#f0a500');
+      badge.textContent = 'SINK';
+      group.appendChild(badge);
+    }
+
+    // Processor name
+    const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    nameText.setAttribute('x', 12);
+    nameText.setAttribute('y', 20);
+    nameText.setAttribute('class', 'node-name');
+    nameText.textContent = name.length > 22 ? name.substring(0, 20) + '..' : name;
+    group.appendChild(nameText);
+
+    // Type
+    const typeText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    typeText.setAttribute('x', 12);
+    typeText.setAttribute('y', 36);
+    typeText.setAttribute('class', 'node-type');
+    const typeStr = p.type || 'unknown';
+    typeText.textContent = typeStr.length > 28 ? typeStr.substring(0, 26) + '..' : typeStr;
+    group.appendChild(typeText);
+
+    // Stats line
+    const statsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    statsGroup.setAttribute('x', 12);
+    statsGroup.setAttribute('y', 54);
+    statsGroup.setAttribute('class', 'node-stats');
+
+    const procSpan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+    procSpan.setAttribute('id', `stat-proc-${name}`);
+    procSpan.setAttribute('class', 'node-processed');
+    procSpan.textContent = formatNum(processed);
+    statsGroup.appendChild(procSpan);
+
+    const sepSpan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+    sepSpan.setAttribute('fill', '#555');
+    sepSpan.textContent = ' processed';
+    statsGroup.appendChild(sepSpan);
+
+    if (errors > 0) {
+      const errSep = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+      errSep.setAttribute('fill', '#555');
+      errSep.textContent = '  ';
+      statsGroup.appendChild(errSep);
+
+      const errSpan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+      errSpan.setAttribute('id', `stat-err-${name}`);
+      errSpan.setAttribute('class', 'node-errors');
+      errSpan.textContent = formatNum(errors);
+      statsGroup.appendChild(errSpan);
+
+      const errLabel = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+      errLabel.setAttribute('fill', '#e74c3c');
+      errLabel.textContent = ' errors';
+      statsGroup.appendChild(errLabel);
+    } else {
+      const errSpan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+      errSpan.setAttribute('id', `stat-err-${name}`);
+      errSpan.textContent = '';
+      statsGroup.appendChild(errSpan);
+    }
+
+    group.appendChild(statsGroup);
+    svg.appendChild(group);
+  });
+}
+
+function renderSources(sources) {
+  const el = document.getElementById('sources');
+  if (!sources || sources.length === 0) {
+    el.innerHTML = '<span style="color:#555">no sources</span>';
+    return;
+  }
+  el.innerHTML = sources.map(s => `
+    <div class="source-badge">
+      <span class="source-dot ${s.running ? 'running' : 'stopped'}"></span>
+      ${s.name} <span style="color:#666">(${s.type})</span>
+    </div>
+  `).join('');
+}
+
+function updateStats(stats) {
+  document.getElementById('stat-processed').textContent = formatNum(stats?.processed || 0);
+  document.getElementById('stat-active').textContent = stats?.active_executions || 0;
+  document.getElementById('stat-processors').textContent = stats?.processors || 0;
+}
+
+let firstLoad = true;
+async function poll() {
+  const data = await fetchFlow();
+  if (!data) {
+    document.getElementById('loading').style.display = 'block';
+    return;
+  }
+  document.getElementById('loading').style.display = 'none';
+
+  updateStats(data.stats);
+  renderSources(data.sources);
+  renderGraph(data, firstLoad);
+  firstLoad = false;
+}
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>

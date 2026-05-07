@@ -1,0 +1,49 @@
+# Example zinc-flow-java pipeline. Loaded by Main on startup when a
+# config.yaml is present (via CLI arg or the working directory).
+#
+# Shape: flow.entryPoints + flow.processors + flow.connections.
+# Hot-reload via POST /api/reload after editing this file.
+
+flow:
+  entryPoints:
+    - ingress
+
+  processors:
+    ingress:
+      type: LogAttribute
+      config:
+        prefix: "[in] "
+
+    router:
+      type: RouteOnAttribute
+      config:
+        routes: "urgent: priority == urgent; bulk: priority == bulk"
+
+    elevate:
+      type: UpdateAttribute
+      config:
+        key: priority
+        value: elevated
+
+    enrich:
+      type: UpdateAttribute
+      config:
+        key: route
+        value: bulk-queue
+
+    sink:
+      type: PutStdout
+      config:
+        prefix: "[out] "
+
+  connections:
+    ingress:
+      success: [router]
+    router:
+      urgent:    [elevate]
+      bulk:      [enrich]
+      unmatched: [sink]
+    elevate:
+      success: [sink]
+    enrich:
+      success: [sink]

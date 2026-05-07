@@ -1,0 +1,5 @@
+zincflow.providers.LoggingProvider$Plugin
+zincflow.providers.ConfigProvider$Plugin
+zincflow.providers.ProvenanceProvider$Plugin
+zincflow.providers.ContentProvider$Plugin
+zincflow.providers.SchemaRegistryProvider$Plugin
