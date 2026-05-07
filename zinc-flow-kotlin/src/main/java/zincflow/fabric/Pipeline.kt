@@ -219,23 +219,20 @@ class Pipeline @JvmOverloads constructor(
         if(relationships[relationship]?.contains(to) != true) {
             return EditResult.fail("connection '$from:$relationship → $to' not found")
         }
-//        if (!relationships.containsKey(relationship) || !relationships[relationship]!!.contains(to)) {
-//            return EditResult.fail("connection '$from:$relationship → $to' not found")
-//        }
-        val newConns: ConnectionMap = g.connections.toMutableMap()
-        val newRels: RelationshipMap = relationships.toMutableMap()
-        val newTargets: MutableList<String> = newRels[relationship]?.filterNot { it == to }?.toMutableList() ?: return EditResult.fail("Relationship target '$to' not found")
+        val newConnections: ConnectionMap = g.connections.toMutableMap()
+        val newRelationships: RelationshipMap = relationships.toMutableMap()
+        val newTargets = newRelationships[relationship]?.filterNot { it == to } ?: return EditResult.fail("Relationship target '$to' not found")
         if (newTargets.isEmpty()) {
-            newRels.remove(relationship)
+            newRelationships.remove(relationship)
         } else {
-            newRels[relationship] = newTargets
+            newRelationships[relationship] = newTargets
         }
-        if (newRels.isEmpty()) {
-            newConns.remove(from)
+        if (newRelationships.isEmpty()) {
+            newConnections.remove(from)
         } else {
-            newConns[from] = newRels
+            newConnections[from] = newRelationships
         }
-        graph = PipelineGraph(g.processors, newConns, g.entryPoints)
+        graph = PipelineGraph(g.processors, newConnections, g.entryPoints)
         return EditResult.success()
     }
 
@@ -277,11 +274,11 @@ class Pipeline @JvmOverloads constructor(
     fun setEntryPoints(names: List<String>): EditResult {
         if (names.isEmpty()) return EditResult.fail("names must not be empty")
         val g = graph
-        for (name in names) {
-            if (!g.processors.containsKey(name)) {
-                return EditResult.fail("processor '$name' not found")
-            }
-        }
+
+        names.filterNot { g.processors.containsKey(it) }
+            .takeIf { it.isNotEmpty() }
+            ?.let { return EditResult.fail(it.joinToString("\n") { p -> "processor '$p' not found" }) }
+
         graph = PipelineGraph(g.processors, g.connections, names.toList())
         return EditResult.success()
     }
@@ -326,15 +323,14 @@ class Pipeline @JvmOverloads constructor(
         return true
     }
 
-    fun enableProvider(providerName: String?): Boolean {
+    fun enableProvider(providerName: String): Boolean {
         val p = context.getProvider(providerName) ?: return false
         p.enable()
         return true
     }
 
     // --- Sources ---
-    fun addSource(source: Source?) {
-        if (source == null) return
+    fun addSource(source: Source) {
         sources[source.name()] = source
         stats.metrics().onSourceRegistered(source)
     }
@@ -357,28 +353,23 @@ class Pipeline @JvmOverloads constructor(
      * `false` on failure — sources use the return value to
      * decide whether to mark the upstream item consumed. */
     private fun ingestFromSource(ff: FlowFile): Boolean {
-        try {
+        return try {
             ingest(ff)
-            return true
+            true
         } catch (ex: RuntimeException) {
-            log.warn("source ingest failed for {}: {}", ff.stringId(), ex.toString())
-            return false
+            log.warn("source ingest failed for ${ff.stringId()}: $ex")
+            false
         }
     }
 
     fun stopSource(name: String?): Boolean {
-        val s = sources.get(name)
-        if (s == null) return false
+        val s = sources[name] ?: return false
         if (s.isRunning) s.stop()
         return true
     }
 
     @JvmRecord
-    data class ProcessorDef(
-        val type: String,
-        val config: Map<String, String>,
-        val requires: List<String>
-    )
+    data class ProcessorDef(val type: String, val config: Map<String, String>, val requires: List<String>)
 
     /** Per-processor stats pulled from [Stats], shaped the same way
      * as the C# `GetProcessorStats` endpoint. One entry per

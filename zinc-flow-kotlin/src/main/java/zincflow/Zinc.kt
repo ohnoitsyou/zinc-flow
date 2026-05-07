@@ -152,7 +152,7 @@ object Zinc {
         identityRef.set(identity)
 
         // Wire providers. The providers: block in config — if present —
-        // takes precedence. Otherwise we instantiate every registered
+        // takes precedence. Otherwise, we instantiate every registered
         // type with its config map drawn from the effective overlay,
         // which preserves the default set (logging, config, provenance,
         // content, schema_registry) plus conditional ones (UIReg when
@@ -231,7 +231,7 @@ object Zinc {
                 TypeRefs.DEFAULT_VERSION,
                 "Self-registers this worker with a central UI via periodic heartbeat.",
                 mutableListOf(CFG_UI_REGISTER)
-            )) { cfg: MutableMap<String, Any> ->
+            )) { cfg: Map<String, Any> ->
                 val target = cfg[CFG_UI_REGISTER]
                 if (target == null || target.toString().isEmpty()) return@register null
                 UIRegistrationProvider(target.toString(), { identityRef.get().toMap(resolvePort()) })
@@ -242,7 +242,7 @@ object Zinc {
                 VersionControlProvider.TYPE, TypeRefs.DEFAULT_VERSION,
                 "Shells out to system git for flow-config commit + push.",
                 mutableListOf(CFG_VC_ENABLED, CFG_VC_REPO, CFG_VC_GIT, CFG_VC_REMOTE, CFG_VC_BRANCH)
-            )) { cfg: MutableMap<String, Any> ->
+            )) { cfg: Map<String, Any> ->
                 val enabled = cfg[CFG_VC_ENABLED]
                 val on = enabled as? Boolean ?: enabled.toString().toBoolean()
                 if (!on) return@register null
@@ -269,26 +269,15 @@ object Zinc {
     private fun defaultProviders(
         providerRegistry: ProviderRegistry,
         effective: MutableMap<String, Any>
-    ): MutableList<Provider> {
-        val out: MutableList<Provider> = mutableListOf()
-        for (info in providerRegistry.listAll()) {
+    ): List<Provider> {
+        return providerRegistry.listAll().mapNotNull { info ->
             val cfg = when (info.name) {
-                UIRegistrationProvider.TYPE -> if (effective[CFG_UI] is MutableMap<*, *>)
-                    effective[CFG_UI] as MutableMap<String, Any>
-                else
-                    mutableMapOf()
-
-                VersionControlProvider.TYPE -> if (effective[CFG_VC] is MutableMap<*, *>)
-                    effective[CFG_VC] as MutableMap<String, Any>
-                else
-                    mutableMapOf()
-
-                else -> mutableMapOf()
+                UIRegistrationProvider.TYPE if (effective[CFG_UI] is Map<*, *>) -> effective[CFG_UI] as Map<String, Any>
+                VersionControlProvider.TYPE if (effective[CFG_VC] is Map<*, *>) -> effective[CFG_VC] as Map<String, Any>
+                else -> mapOf()
             }
-            val p = providerRegistry.create(info.qualifiedName(), cfg)
-            if (p != null) out.add(p)
+            providerRegistry.create(info.qualifiedName(), cfg)
         }
-        return out
     }
 
     private fun resolveConfigPath(args: Array<String>): Path? {
@@ -402,11 +391,11 @@ object Zinc {
     private fun benchThroughput(n: Int, quiet: Boolean) {
         val tag: Processor = UpdateAttribute("env", "prod")
         val sink: Processor = UpdateAttribute("done", "true")
-        val procs = mutableMapOf("tag" to tag, "sink" to sink)
-        val conns = mutableMapOf(
+        val processors = mutableMapOf("tag" to tag, "sink" to sink)
+        val connections = mutableMapOf(
             "tag" to mutableMapOf(Relationships.SUCCESS to mutableListOf("sink"))
         )
-        val graph = PipelineGraph(procs, conns, listOf("tag"))
+        val graph = PipelineGraph(processors, connections, listOf("tag"))
         val pipeline = Pipeline(graph)
 
         val payload = "bench payload data here".toByteArray(StandardCharsets.UTF_8)

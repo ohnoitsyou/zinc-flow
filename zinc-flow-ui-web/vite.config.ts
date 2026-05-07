@@ -23,8 +23,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:9091',
-      '/metrics': 'http://localhost:9091',
+      '/api': 'http://localhost:9090',
+      '/metrics': 'http://localhost:9090',
     },
   },
 })

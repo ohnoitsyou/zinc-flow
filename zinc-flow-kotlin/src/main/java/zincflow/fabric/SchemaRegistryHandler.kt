@@ -3,11 +3,8 @@ package zincflow.fabric
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.javalin.Javalin
 import io.javalin.http.Context
-import io.javalin.http.Handler
 import zincflow.providers.SchemaRegistryProvider
-import java.util.Map
 import java.util.Optional
-import java.util.function.Function
 
 /** Confluent-shape REST surface over [SchemaRegistryProvider].
  * Mounted under `/api/schema-registry/ *` alongside the rest of
@@ -50,16 +47,16 @@ class SchemaRegistryHandler(val registry: SchemaRegistryProvider) {
         val id: Int
         try {
             id = Integer.parseInt(ctx.pathParam("id"))
-        } catch (e: NumberFormatException) {
+        } catch (_: NumberFormatException) {
             error(ctx, 400, 40000, "id must be an integer")
             return
         }
         val entry = registry.getById(id)
-        if (entry.isEmpty()) {
+        if (entry.isEmpty) {
             error(ctx, 404, 40403, "schema id $id not found")
             return
         }
-        write(ctx, 200, Map.of<String?, String?>("schema", entry.get().definition))
+        write(ctx, 200, mapOf("schema" to entry.get().definition))
     }
 
     // --- GET /subjects → ["a","b","c"] ---
@@ -85,13 +82,14 @@ class SchemaRegistryHandler(val registry: SchemaRegistryProvider) {
     private fun getVersion(ctx: Context) {
         val subject = ctx.pathParam("subject")
         val version = ctx.pathParam("version")
-        val entry = if ("latest" == version)
+        val entry = if ("latest" == version) {
             registry.latest(subject)
-        else
-            parseVersion(version).flatMap<SchemaRegistryProvider.Schema> { v: Int ->
+        } else {
+            parseVersion(version).flatMap { v: Int ->
                 registry.getEntry(subject, v)
             }
-        if (entry.isEmpty()) {
+        }
+        if (entry.isEmpty) {
             // Distinguish unknown subject vs unknown version — Confluent does.
             if (!registry.listSubjects().contains(subject)) {
                 error(ctx, 404, 40401, "subject '$subject' not found")
@@ -102,10 +100,10 @@ class SchemaRegistryHandler(val registry: SchemaRegistryProvider) {
         }
         val s = entry.get()
         val body = buildMap {
-            put("subject", s.subject ?: "")
+            put("subject", s.subject)
             put("version", s.version)
             put("id", s.id)
-            put("schema", s.definition ?: "")
+            put("schema", s.definition)
         }
         write(ctx, 200, body)
     }
@@ -139,7 +137,7 @@ class SchemaRegistryHandler(val registry: SchemaRegistryProvider) {
 
         try {
             val registered = registry.register(subject, schemaDef)
-            write(ctx, 200, Map.of<String?, Int?>("id", registered.id))
+            write(ctx, 200, mapOf("id" to registered.id))
         } catch (ex: IllegalArgumentException) {
             error(ctx, 422, 42202, "register failed: " + ex.message)
         } catch (ex: RuntimeException) {
@@ -166,7 +164,7 @@ class SchemaRegistryHandler(val registry: SchemaRegistryProvider) {
         val version: Int
         try {
             version = Integer.parseInt(ctx.pathParam("version"))
-        } catch (e: NumberFormatException) {
+        } catch (_: NumberFormatException) {
             error(ctx, 400, 40000, "version must be an integer")
             return
         }
@@ -192,9 +190,10 @@ class SchemaRegistryHandler(val registry: SchemaRegistryProvider) {
 
     @Throws(Exception::class)
     private fun error(ctx: Context, status: Int, errorCode: Int, message: String?) {
-        val body: MutableMap<String?, Any?> = LinkedHashMap<String?, Any?>()
-        body.put("error_code", errorCode)
-        body.put("message", message)
+        val body: Map<String, Any> = buildMap {
+            put("error_code", errorCode)
+            if(message != null) put("message", message)
+        }
         write(ctx, status, body)
     }
 

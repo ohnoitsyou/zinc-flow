@@ -4,7 +4,6 @@ import zincflow.core.FlowFile
 import zincflow.core.Processor
 import zincflow.core.ProcessorResult
 import zincflow.core.RecordContent
-import java.util.List
 
 /** Fan out a RecordContent FlowFile into one FlowFile per record. Each
  * output carries the original attributes plus zero-padded `split.index`

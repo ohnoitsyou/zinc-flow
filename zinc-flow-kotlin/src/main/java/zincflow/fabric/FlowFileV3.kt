@@ -42,12 +42,9 @@ object FlowFileV3 {
 
         val attrs = ff.attributes
         writeFieldLength(out, attrs.size)
-        for (entry in attrs.entries) {
-            val k = entry.key!!.toByteArray(StandardCharsets.UTF_8)
-            val v = if (entry.value == null)
-                ByteArray(0)
-            else
-                entry.value!!.toByteArray(StandardCharsets.UTF_8)
+        for ((key, value) in attrs.entries) {
+            val k = key.toByteArray(StandardCharsets.UTF_8)
+            val v = value.toByteArray(StandardCharsets.UTF_8)
             writeFieldLength(out, k.size)
             out.writeBytes(k)
             writeFieldLength(out, v.size)
@@ -62,19 +59,14 @@ object FlowFileV3 {
     }
 
     @JvmStatic
-    fun packMultiple(flowFiles: MutableList<FlowFile>, contents: MutableList<ByteArray>): ByteArray {
+    fun packMultiple(flowFiles: List<FlowFile>, contents: List<ByteArray>): ByteArray {
         require(flowFiles.size == contents.size) {
-            ("flowFiles.size() (" + flowFiles.size + ") must equal contents.size() ("
-                    + contents.size + ")")
+            "flowFiles.size() (${flowFiles.size}) must equal contents.size() (${contents.size})"
         }
         val out = ByteArrayOutputStream()
-        val pairs = flowFiles.zip(contents)
-        for (flowFile in pairs) {
-            out.writeBytes(pack(flowFile.first, flowFile.second))
+        flowFiles.zip(contents).forEach { (ff, content) ->
+            out.writeBytes(pack(ff, content))
         }
-//        for (i in flowFiles.indices) {
-//            out.writeBytes(pack(flowFiles[i], contents[i]))
-//        }
         return out.toByteArray()
     }
 
@@ -111,10 +103,10 @@ object FlowFileV3 {
             if (pos + valLen > data.size) {
                 return UnpackResult(null, offset, "truncated value at attribute '$key'")
             }
-            val `val` = String(data, pos, valLen, StandardCharsets.UTF_8)
+            val value = String(data, pos, valLen, StandardCharsets.UTF_8)
             pos += valLen
 
-            attrs.put(key, `val`)
+            attrs[key] = value
         }
 
         if (pos + 8 > data.size) {
@@ -192,7 +184,7 @@ object FlowFileV3 {
     @JvmRecord
     data class UnpackResult(@JvmField val flowFile: FlowFile?, @JvmField val nextOffset: Int, @JvmField val error: String?) {
         fun ok(): Boolean {
-            return error == null || error.isEmpty()
+            return error.isNullOrEmpty()
         }
     }
 }

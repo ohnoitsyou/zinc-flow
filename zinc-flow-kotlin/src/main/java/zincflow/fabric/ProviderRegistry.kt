@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
  * framework code. */
 class ProviderRegistry {
     fun interface Factory {
-        fun create(config: MutableMap<String, Any>): Provider?
+        fun create(config: Map<String, Any>): Provider?
     }
 
     class TypeInfo(
@@ -51,12 +51,12 @@ class ProviderRegistry {
 
     private fun resolveKey(type: String): String? {
         if (type.isEmpty()) return null
-        if (type.contains("@")) return (if (versioned.containsKey(type)) type else null)!!
+        if (type.contains("@")) return (if (versioned.containsKey(type)) type else null)
         val latest = latestVersion[type]
         return (if (latest == null) null else TypeRefs.qualify(type, latest))
     }
 
-    fun create(type: String, config: MutableMap<String, Any>): Provider? {
+    fun create(type: String, config: Map<String, Any>): Provider? {
         val key = resolveKey(type)
         requireNotNull(key) { "ProviderRegistry: unknown provider type '$type'" }
         return versioned[key]?.create(config)

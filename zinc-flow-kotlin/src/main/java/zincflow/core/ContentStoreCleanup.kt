@@ -2,7 +2,6 @@ package zincflow.core
 
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.util.Set
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
@@ -53,7 +52,7 @@ class ContentStoreCleanup(private val store: ContentStore) {
      * metric-ize this without having to subscribe to logging. */
     fun sweep(knownClaims: MutableList<String>): Int {
         if (knownClaims.isEmpty()) return 0
-        val snapshot: MutableSet<String> = synchronized(lock) { active.toMutableSet() }
+        val snapshot = synchronized(lock) { active.toSet() }
         return knownClaims.fold(0) { acc, claim ->
             if(!snapshot.contains(claim)) {
                 try {

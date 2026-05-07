@@ -91,7 +91,7 @@ class ParamInfo(
             )
         }
         companion object {
-            operator fun invoke(name: String?): ParamInfo.Builder {
+            operator fun invoke(name: String?): Builder {
                 return ParamInfo.Builder(name)
             }
         }

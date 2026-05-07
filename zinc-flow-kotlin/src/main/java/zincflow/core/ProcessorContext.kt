@@ -24,21 +24,21 @@ class ProcessorContext {
         return providers[name].takeIf { type.isInstance(it) } as T?
     }
 
-    fun listProviders(): MutableList<String> {
-        return providers.keys.toMutableList()
+    fun listProviders(): List<String> {
+        return providers.keys.toList()
     }
 
-    fun providers(): MutableMap<String, Provider> {
-        return providers.toMutableMap()
+    fun providers(): Map<String, Provider> {
+        return providers.toMap()
     }
 
     fun registerDependent(providerName: String, processorName: String) {
-        dependents.computeIfAbsent(providerName) { _ : String -> mutableListOf() }
+        dependents.computeIfAbsent(providerName) { mutableListOf() }
             .add(processorName)
     }
 
-    fun getDependents(providerName: String): MutableList<String> {
-        return dependents[providerName]?.toMutableList() ?: mutableListOf()
+    fun getDependents(providerName: String): List<String> {
+        return dependents[providerName]?.toList() ?: listOf()
     }
 
     fun shutdownAll() {

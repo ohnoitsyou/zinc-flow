@@ -82,15 +82,15 @@ class HttpServer @JvmOverloads constructor(
                 virtualThreadsExecutor = Executors.newVirtualThreadPerTaskExecutor()
             }
         }
-            // GET / serves the dashboard when the static file is on the
-            // classpath. POST / is ingest — a Java-track choice for
-            // enterprise HTTP ingress on the worker itself. Distinguishing
-            // by method is a zincflow-ism; C# uses a separate
-            // ListenHTTP source instead.
+            // GET / serves the dashboard when the static file is on the classpath.
+            // POST / is ingest — a Java-track choice for enterprise HTTP ingress on the worker itself.
+            // Distinguishing by method is a zincflow-ism;
+            // C# uses a separate ListenHTTP source instead.
             .get("/") { handleDashboard(it) }
             .post("/") { handleIngest(it) }
             .get("/dashboard") { handleDashboard(it) }
             .get("/health") { handleHealth(it) }
+            .get("/readyz") { handleReadyz(it) }
             .get("/metrics") { handleMetrics(it) }
             .get("/api/stats") { handleStats(it) }
             .get("/api/processors") { handleProcessors(it) }
@@ -195,8 +195,7 @@ class HttpServer @JvmOverloads constructor(
     sealed class FlowFileIngest(val target: String, val content: String, val attributes: Map<String, String>) {
         class ContentFlowFile(target: String, content: String, attributes: Map<String, String>) : FlowFileIngest(target, content, attributes)
         class Base64FlowFile(target: String, contentBase64: String, attributes: Map<String, String>): FlowFileIngest(target,
-            Base64.getDecoder().decode(contentBase64).contentToString(), attributes) {
-        }
+            Base64.getDecoder().decode(contentBase64).contentToString(), attributes)
     }
 
     class UIFlowFileDeserializer : StdDeserializer<FlowFileIngest>(FlowFileIngest::class.java) {
@@ -301,7 +300,7 @@ class HttpServer @JvmOverloads constructor(
      * [Stats.snapshot] method for programmatic consumers. */
     private fun summaryStats(): Map<String, Any?> {
         return buildMap {
-            put("processed", pipeline.stats().snapshot().get("totalProcessed") as Long?)
+            put("processed", pipeline.stats().snapshot()["totalProcessed"])
             put("activeExecutions", pipeline.metrics().activeExecutions())
             put("processors", pipeline.graph().processors.size)
             put("sources", pipeline.sources().size)
@@ -343,28 +342,18 @@ class HttpServer @JvmOverloads constructor(
             processors.add(info)
         }
 
-        val providers = mutableListOf<Map<String, Any>>()
-        val pctx = pipeline.context()
-        for (pname in pctx.listProviders()) {
-            val p = pctx.getProvider(pname)
-            providers.add(
-                mapOf(
-                    "name" to pname,
-                    "type" to (p?.providerType() ?: "unknown"),
-                    "state" to (p?.state()?.name ?: "UNKNOWN")
-                )
+        val context = pipeline.context()
+        val providers = context.listProviders().map { providerName ->
+            val p = context.getProvider(providerName)
+            mapOf(
+                "name" to providerName,
+                "type" to (p?.providerType() ?: "unknown"),
+                "state" to (p?.state()?.name ?: "UNKNOWN")
             )
         }
 
-        val srcs = mutableListOf<Map<String, Any?>>()
-        for (s in pipeline.sources().values) {
-            srcs.add(
-                mapOf(
-                    "name" to s.name(),
-                    "type" to s.sourceType(),
-                    "running" to s.isRunning
-                )
-            )
+        val sources: List<Map<String, Any>> = pipeline.sources().values.map { source ->
+            mapOf("name" to source.name(), "type" to source.sourceType(), "running" to  source.isRunning)
         }
 
         val out = buildMap {
@@ -376,7 +365,7 @@ class HttpServer @JvmOverloads constructor(
             // C#-cohort candidate for consistency.
             put("connections", graph.connections)
             put("providers", providers)
-            put("sources", srcs)
+            put("sources", sources)
             // Embedded stats match /api/stats summary shape (processed,
             // activeExecutions, processors, sources) — not the detailed
             // Stats.snapshot(). Dashboards only need the summary; callers
@@ -388,22 +377,17 @@ class HttpServer @JvmOverloads constructor(
 
     @Throws(Exception::class)
     private fun handleRegistry(ctx: Context) {
-        val r = pipeline.registry()
-        val out = mutableListOf<Map<String, Any>>()
-        if (r != null) {
-            // Emit the latest version of each type, matching the C# worker's
-            // shape so the shared React UI consumes both uniformly.
-            val latestByName = TreeMap<String?, Registry.TypeInfo>()
-            for (info in r.listAll()) {
-                val prev = latestByName[info?.name]
-                if (prev == null || TypeRefs.compareVersions(info?.version ?: "1.0.0", prev.version) > 0) {
-                    latestByName[info?.name] = info!!
-                }
-            }
-            for (info in latestByName.values) {
-                out.add(typeInfoToJson(info))
+        // Emit the latest version of each type, matching the C# worker's
+        // shape so the shared React UI consumes both uniformly.
+        val latestByName = TreeMap<String, Registry.TypeInfo>()
+        for (info in pipeline.registry().listAll()) {
+            val prev = latestByName[info.name]
+            if (prev == null || TypeRefs.compareVersions(info.version, prev.version) > 0) {
+                latestByName[info.name] = info
             }
         }
+
+        val out = latestByName.values.map { typeInfoToJson(it) }
         ctx.contentType("application/json").result(json.writeValueAsBytes(out))
     }
 
@@ -414,12 +398,12 @@ class HttpServer @JvmOverloads constructor(
 
     private fun handleDashboard(ctx: Context) {
         try {
-            HttpServer::class.java.getClassLoader().getResourceAsStream("dashboard.html").use { `in` ->
-                if (`in` == null) {
+            HttpServer::class.java.classLoader.getResourceAsStream("dashboard.html").use { inStream ->
+                if (inStream == null) {
                     ctx.status(404).result("dashboard.html not on classpath")
                     return
                 }
-                ctx.contentType("text/html; charset=utf-8").result(`in`.readAllBytes())
+                ctx.contentType("text/html; charset=utf-8").result(inStream.readAllBytes())
             }
         } catch (ex: IOException) {
             ctx.status(500).result("dashboard read failed: " + ex.message)
@@ -465,33 +449,43 @@ class HttpServer @JvmOverloads constructor(
     // --- Health ---
     @Throws(Exception::class)
     private fun handleHealth(ctx: Context) {
-        val srcs = mutableListOf<MutableMap<String, Any>>()
-        for (s in pipeline.sources().values) {
-            srcs.add(mutableMapOf("name" to s.name(), "type" to s.sourceType(), "running" to s.isRunning))
+        val sources: List<Map<String, Any>> = pipeline.sources().values.map { source ->
+            mapOf("name" to source.name(), "type" to source.sourceType(), "running" to source.isRunning)
         }
         ctx.contentType("application/json").result(
             json.writeValueAsBytes(
                 mapOf(
                     "status" to "healthy",
-                    "sources" to srcs
+                    "sources" to sources
                 )
             )
         )
     }
 
+    // --- Readyz ---
+    @Throws(Exception::class)
+    private fun handleReadyz(ctx: Context) {
+        val processorCount = pipeline.graph().processors.count()
+        val sources = pipeline.sources().entries
+
+        val body = buildMap {
+            put("ready", )
+            put("processors", )
+            put("sourcesTotal", )
+            put("sourcesNotRunning", )
+        }
+    }
+
     // --- Providers ---
     @Throws(Exception::class)
     private fun handleProviders(ctx: Context) {
-        val out = mutableListOf<Map<String, Any>>()
-        val pctx = pipeline.context()
-        for (name in pctx.listProviders()) {
-            val p = pctx.getProvider(name)
-            out.add(
-                mapOf(
-                    "name" to name,
-                    "type" to (p?.providerType() ?: "unknown"),
-                    "state" to (p?.state()?.name ?: "UNKNOWN")
-                )
+        val context = pipeline.context()
+        val out = context.listProviders().map { providerName ->
+            val p = context.getProvider(providerName)
+            mapOf(
+                "name" to providerName,
+                "type" to (p?.providerType() ?: "unknown"),
+                "state" to (p?.state()?.name ?: "UNKNOWN")
             )
         }
         ctx.contentType("application/json").result(json.writeValueAsBytes(out))
@@ -889,19 +883,19 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 400, "invalid json body")
             return
         }
-        val rels = mutableMapOf<String, List<String>>()
+        val relationships = mutableMapOf<String, List<String>>()
         for (entry in body.entries) {
             if (entry.value is List<*>) {
                 val list = entry.value as List<String>
                 val targets = list.map { v -> str(v) }
-                rels[entry.key] = targets
+                relationships[entry.key] = targets
             } else {
                 writeError(ctx, 400, "relationship '" + entry.key + "' must map to a list of target names")
                 return
             }
         }
-        val r = pipeline.setConnections(name, rels)
-        writeEditResult(ctx, r, mapOf("status" to "replaced", "from" to name, "relationships" to rels))
+        val r = pipeline.setConnections(name, relationships)
+        writeEditResult(ctx, r, mapOf("status" to "replaced", "from" to name, "relationships" to relationships))
     }
 
     // --- Identity ---
@@ -956,7 +950,7 @@ class HttpServer @JvmOverloads constructor(
                 val p = reqBody["push"]
                 if (p is Boolean) push = p
             }
-            val relPath = configPath.getFileName().toString()
+            val relPath = configPath.fileName.toString()
             val commitRes = vc.commit(relPath, message)
             body["committed"] = commitRes.ok
             body["commitExitCode"] = commitRes.exitCode
@@ -978,12 +972,8 @@ class HttpServer @JvmOverloads constructor(
     // --- Processor types (versioned registry) ---
     @Throws(Exception::class)
     private fun handleProcessorTypes(ctx: Context) {
-        val r = pipeline.registry()
-        val out = mutableListOf<Map<String, Any>>()
-        if (r != null) {
-            for (info in r.listAll().filterNotNull()) {
-                out.add(typeInfoToJson(info))
-            }
+        val out = pipeline.registry().listAll().map {
+            typeInfoToJson(it)
         }
         ctx.contentType("application/json").result(json.writeValueAsBytes(out))
     }
@@ -991,22 +981,17 @@ class HttpServer @JvmOverloads constructor(
     @Throws(Exception::class)
     private fun handleProcessorType(ctx: Context) {
         val r = pipeline.registry()
-        if (r == null) {
-            writeError(ctx, 503, "registry not wired — processor types unavailable")
-            return
-        }
         val name = ctx.pathParam("name")
         val versions = r.listVersions(name)
         if (versions.isEmpty()) {
             writeError(ctx, 404, "processor type '$name' not found")
             return
         }
-        val body = mutableMapOf<String, Any?>()
-        body["name"] = name
-        body["latest"] = if (r.latest(name) == null) null else r.latest(name)?.version
-        val vs = mutableListOf<Map<String, Any>>() // TODO: Change to .map
-        for (info in versions) vs.add(typeInfoToJson(info))
-        body["versions"] = vs
+        val body = buildMap {
+            put("name", name)
+            put("latest", if (r.latest(name) == null) null else r.latest(name)?.version)
+            put("versions", versions.map { typeInfoToJson(it) })
+        }
         ctx.contentType("application/json").result(json.writeValueAsBytes(body))
     }
 
@@ -1068,10 +1053,6 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 501, "plugins directory was not configured at startup")
             return
         }
-        if (pipeline.registry() == null) {
-            writeError(ctx, 501, "pipeline has no registry wired — plugin reload unavailable")
-            return
-        }
         // Release the previous URLClassLoader before replacing it — if
         // we leak these, repeated reloads pin every plugin jar open
         // and exhaust file handles over time.
@@ -1084,9 +1065,9 @@ class HttpServer @JvmOverloads constructor(
     }
 
     // --- Body + response helpers ---
-    private fun readJsonBody(ctx: Context): MutableMap<String, Any>? {
+    private fun readJsonBody(ctx: Context): Map<String, Any>? {
         return try {
-            json.readValue(ctx.bodyAsBytes(), MutableMap::class.java) as? MutableMap<String, Any>
+            json.readValue(ctx.bodyAsBytes(), Map::class.java) as? Map<String, Any>
         } catch (_: Exception) {
             null
         }
@@ -1094,7 +1075,7 @@ class HttpServer @JvmOverloads constructor(
 
     private fun nameFromBody(ctx: Context): String {
         val body = readJsonBody(ctx)
-        return if (body == null) "" else str(body.get("name"))
+        return if (body == null) "" else str(body["name"])
     }
 
     @Throws(Exception::class)

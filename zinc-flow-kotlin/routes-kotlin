@@ -1,0 +1,54 @@
+GET /api/stats
+GET /api/processors
+GET /api/processor-stats
+GET /api/registry
+GET /api/flow
+GET /api/connections
+GET /api/providers
+GET /health
+++ GET /readyz
+GET /api/provenance
+GET /api/provenance/{id}
+GET /api/sources
+GET /api/overlays
+GET /api/vc/status
+++ GET /api/flow/status
+++ GET /api/processors/{name}/samples
+++ GET /api/layout
+GET /api/provenance/failures
+?? GET /metrics
+?? GET /api/plugins
+?? GET /api/processor-types
+?? GET /api/processor-types/{name}
+?? GET /api/identity
+
+PUT /api/processors/{name}/config
+PUT /api/processors/{name}/connections
+PUT /api/connections/{from}
+++ PUT /api/providers/{name}/config
+++ PUT /api/sources/{name}/config
+?? PUT /api/entrypoints
+
+POST /api/processors/add
+POST /api/processors/enable
+POST /api/processors/disable
+POST /api/processors/state
+POST /api/providers/enable
+POST /api/providers/disable
+POST /api/reload
+POST /api/sources/start
+POST /api/sources/stop
+POST /api/vc/commit
+POST /api/vc/push
+POST /api/flow/save
+++ POST /api/expressions/parse
+++ POST /api/layout
+POST /api/connections
+POST /api/processors/{name}/stats/reset
+++ POST /api/sources/add
+?? POST /api/plugins/reload
+?? POST /api/flowfiles/ingest
+
+DELETE /api/connections
+DELETE /api/processors/remove
+++ DELETE /api/sources/remove
