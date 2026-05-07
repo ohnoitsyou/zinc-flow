@@ -16,8 +16,7 @@ sealed interface ProcessorResult {
     data class Single private constructor(@JvmField val flowFile: FlowFile) : ProcessorResult {
         companion object {
             operator fun invoke(flowFile: FlowFile): ProcessorResult {
-                return Single(FlowFile(flowFile.id, flowFile.attributes, flowFile.content,
-                    flowFile.timestampMillis, flowFile.hopCount))
+                return Single(flowFile)
             }
         }
     }

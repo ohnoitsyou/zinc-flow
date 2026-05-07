@@ -48,13 +48,13 @@ class SourceRegistry {
 
     private fun resolveKey(type: String): String? {
         if (type.isEmpty()) return null
-        if (type.contains("@")) return (if (versioned.containsKey(type)) type else null)!!
+        if (type.contains("@")) return (if (versioned.containsKey(type)) type else null)
         val latest = latestVersion[type]
-        return (if (latest == null) null else TypeRefs.qualify(type, latest))!!
+        return (if (latest == null) null else TypeRefs.qualify(type, latest))
     }
 
     fun create(type: String, name: String, config: MutableMap<String, Any>): Source? {
-        val key = resolveKey(type)
+        val key = resolveKey(type) ?: throw IllegalArgumentException("$type is not defined")
         return versioned[key]?.create(name, config)
     }
 

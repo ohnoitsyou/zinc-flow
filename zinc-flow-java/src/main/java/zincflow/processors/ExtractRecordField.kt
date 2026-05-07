@@ -27,7 +27,9 @@ class ExtractRecordField(fields: String, recordIndex: Int) : Processor {
                 if (trimmed.isEmpty()) continue
                 val colon = trimmed.contains(":")
                 require(colon) { "ExtractRecordField: malformed entry '$trimmed' — expected 'fieldName:attrName'" }
-                add(Pair(trimmed.substringBefore(":").trim(), trimmed.substringAfter(":").trim()))
+                val fieldName = trimmed.substringBefore(":").trim().takeIf { it.isNotBlank() } ?: throw IllegalArgumentException("Field name missing")
+                val attrName = trimmed.substringAfter(":").trim().takeIf { it.isNotBlank() } ?: throw IllegalArgumentException("Attribute name missing")
+                add(Pair(fieldName, attrName))
             }
         }
     }

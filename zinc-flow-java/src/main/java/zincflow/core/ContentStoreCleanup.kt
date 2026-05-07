@@ -55,7 +55,7 @@ class ContentStoreCleanup(private val store: ContentStore) {
         if (knownClaims.isEmpty()) return 0
         val snapshot: MutableSet<String> = synchronized(lock) { active.toMutableSet() }
         return knownClaims.fold(0) { acc, claim ->
-            if(snapshot.contains(claim)) {
+            if(!snapshot.contains(claim)) {
                 try {
                     store.delete(claim)
                     acc.inc()
@@ -81,6 +81,8 @@ class ContentStoreCleanup(private val store: ContentStore) {
         // park/unpark). The sweep body runs on a virtual thread so a
         // slow enumerator or a disk hiccup on delete can't stall the
         // next tick.
+        scheduler = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofPlatform().daemon().name("zinc-flow-content-cleanup").factory())
         running = scheduler.scheduleAtFixedRate(
             { Thread.startVirtualThread { runSweep(enumerator) } },
             period, period, unit

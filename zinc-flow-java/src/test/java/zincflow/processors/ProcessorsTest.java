@@ -56,7 +56,8 @@ final class ProcessorsTest {
     @Test
     void updateAttributeBlankKeyRejected() {
         assertThrows(IllegalArgumentException.class, () -> new UpdateAttribute("", "v"));
-        assertThrows(IllegalArgumentException.class, () -> new UpdateAttribute(null, "v"));
+        // Update attribute doesn't accept null for the key
+        assertThrows(NullPointerException.class, () -> new UpdateAttribute(null, "v"));
     }
 
     // --- LogAttribute ---

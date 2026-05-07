@@ -13,6 +13,22 @@ import static org.junit.jupiter.api.Assertions.*;
 final class ConfigLoaderTest {
 
     @Test
+    void miniGraph() {
+        var yaml = """
+                flow:
+                  entryPoints:
+                   - a
+                  processors:
+                    a:
+                        type: LogAttribute
+                        config: {}
+                  connections: {}
+                """;
+        var graph = new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml);
+        assertNotNull(graph);
+    }
+
+    @Test
     void minimalGraphLoads() {
         var yaml = """
                 flow:
@@ -60,7 +76,9 @@ final class ConfigLoaderTest {
                       config: {}
                 """;
 
-        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
+//        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
+        assertThrows(ConfigProcessingException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
+
     }
 
     @Test
@@ -84,7 +102,8 @@ final class ConfigLoaderTest {
                     real:
                       type: LogAttribute
                 """;
-        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
+//        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
+        assertThrows(ConfigProcessingException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
     }
 
     @Test
@@ -99,7 +118,7 @@ final class ConfigLoaderTest {
                     a:
                       success: [nosuch]
                 """;
-        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
+        assertThrows(ConfigProcessingException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
     }
 
     @Test
@@ -123,7 +142,7 @@ final class ConfigLoaderTest {
                 """;
         var graph = new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml);
         var pipeline = new Pipeline(graph);
-        var ff = FlowFile.Companion.invoke(0, Map.of(), new RawContent(new byte[0]), 0, 0);
+        var ff = FlowFile.Companion.invoke(0, Map.of("priority", "urgent"), new RawContent(new byte[0]), 0, 0);
         pipeline.ingest(ff);
         // Both router and elevate should have been dispatched.
         assertEquals(2L, pipeline.stats().snapshot().get("totalProcessed"));

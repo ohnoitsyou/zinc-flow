@@ -2,7 +2,6 @@ package zincflow.fabric
 
 import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
-import zincflow.fabric.ConfigLoader.ProcessorSpec
 
 /** Serialises a running [PipelineGraph] + recorded
  * [ProcessorSpec] map back to YAML. Used by

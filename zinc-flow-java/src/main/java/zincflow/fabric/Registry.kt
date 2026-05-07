@@ -123,7 +123,7 @@ class Registry {
     private fun resolveKey(type: String): String? {
         if (type.isEmpty()) return null
         if (type.contains("@")) {
-            return (if (versioned.containsKey(type)) type else null)!!
+            return (if (versioned.containsKey(type)) type else null)
         }
         val latest = latestVersion[type] ?: return null
         return "$type@$latest"
@@ -139,7 +139,7 @@ class Registry {
         config: Map<String, String>,
         ctx: ProcessorContext? = ProcessorContext()
     ): Processor? {
-        val key = resolveKey(type) ?: return null
+        val key = resolveKey(type) ?: throw IllegalArgumentException("$type is not defined")
         val f: Factory = versioned[key]!!
         return f.create(config, ctx ?: ProcessorContext())
     }
@@ -579,7 +579,8 @@ class Registry {
         }
 
         private fun required(cfg: Map<String, String>, key: String?): String {
-            val value: String = cfg[key]!!
+            val value = cfg[key]
+            requireNotNull(value) { "'$key' is required but no value included in config"}
             return value
         }
     }

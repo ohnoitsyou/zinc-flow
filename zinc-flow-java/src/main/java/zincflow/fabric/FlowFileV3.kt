@@ -62,15 +62,19 @@ object FlowFileV3 {
     }
 
     @JvmStatic
-    fun packMultiple(flowFiles: MutableList<FlowFile?>, contents: MutableList<ByteArray?>): ByteArray {
+    fun packMultiple(flowFiles: MutableList<FlowFile>, contents: MutableList<ByteArray>): ByteArray {
         require(flowFiles.size == contents.size) {
             ("flowFiles.size() (" + flowFiles.size + ") must equal contents.size() ("
                     + contents.size + ")")
         }
         val out = ByteArrayOutputStream()
-        for (i in flowFiles.indices) {
-            out.writeBytes(FlowFileV3.pack(flowFiles.get(i)!!, contents.get(i)))
+        val pairs = flowFiles.zip(contents)
+        for (flowFile in pairs) {
+            out.writeBytes(pack(flowFile.first, flowFile.second))
         }
+//        for (i in flowFiles.indices) {
+//            out.writeBytes(pack(flowFiles[i], contents[i]))
+//        }
         return out.toByteArray()
     }
 

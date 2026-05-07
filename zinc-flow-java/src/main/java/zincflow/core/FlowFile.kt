@@ -53,7 +53,7 @@ data class FlowFile private constructor(
         fun create(bytes: ByteArray, attributes: Map<String, String> = mapOf()): FlowFile {
             return FlowFile(
                 ID_SEQ.incrementAndGet(),
-                attributes,
+                attributes.toMap(),
                 RawContent(bytes),
                 System.currentTimeMillis(),
                 0
@@ -64,7 +64,7 @@ data class FlowFile private constructor(
         fun create(content: Content, attributes: Map<String, String> = mapOf()): FlowFile {
             return FlowFile(
                 ID_SEQ.incrementAndGet(),
-                attributes,
+                attributes.toMap(),
                 content,
                 System.currentTimeMillis(),
                 0

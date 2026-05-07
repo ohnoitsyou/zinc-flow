@@ -125,10 +125,9 @@ class Pipeline @JvmOverloads constructor(
     fun removeProcessor(name: String): Boolean {
         val g = graph
         if (!g.processors.containsKey(name)) return false
-        val newProcessors = g.processors.filter { it.key == name }.toMutableMap()
-        val newConnections = g.connections.filter { it.key == name }.toMutableMap()
-        val newEntries: MutableList<String> = ArrayList(g.entryPoints)
-        newEntries.remove(name)
+        val newProcessors = g.processors.filterNot { it.key == name }
+        val newConnections = g.connections.filterNot { it.key == name }
+        val newEntries = g.entryPoints.filterNot { it == name }
         graph = PipelineGraph(newProcessors, newConnections, newEntries)
         processorStates.remove(name)
         processorDefs.remove(name)
@@ -225,7 +224,7 @@ class Pipeline @JvmOverloads constructor(
 //        }
         val newConns: ConnectionMap = g.connections.toMutableMap()
         val newRels: RelationshipMap = relationships.toMutableMap()
-        val newTargets: MutableList<String> = newRels[relationship]?.filter { it == to }?.toMutableList() ?: return EditResult.fail("Relationship target '$to' not found")
+        val newTargets: MutableList<String> = newRels[relationship]?.filterNot { it == to }?.toMutableList() ?: return EditResult.fail("Relationship target '$to' not found")
         if (newTargets.isEmpty()) {
             newRels.remove(relationship)
         } else {

@@ -41,8 +41,7 @@ final class GetFileTest {
     void unpacksV3BundleIntoMultipleFlowFiles(@TempDir Path dir) throws Exception {
         FlowFile ff1 = FlowFile.Companion.create("a".getBytes(), Map.of("k1", "v1"));
         FlowFile ff2 = FlowFile.Companion.create("bb".getBytes(), Map.of("k2", "v2"));
-        byte[] bundle = FlowFileV3.packMultiple(List.of(ff1, ff2),
-                List.of("a".getBytes(), "bb".getBytes()));
+        byte[] bundle = FlowFileV3.packMultiple(List.of(ff1, ff2), List.of("a".getBytes(), "bb".getBytes()));
         Files.write(dir.resolve("bundle.bin"), bundle);
 
         var src = new GetFile("file", dir, "*", 1000, true);

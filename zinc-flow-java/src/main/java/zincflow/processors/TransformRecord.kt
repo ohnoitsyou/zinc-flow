@@ -70,7 +70,7 @@ class TransformRecord(operationsSpec: String) : Processor {
                 "TransformRecord: malformed directive '$directive' — expected 'operation:target' or 'operation:target:expression'"
             }
 
-            val (op, target, expression) = parts
+            val (op, target, expression) = (parts + "").take(3)
             require(KNOWN_OPS.contains(op)) {
                 "TransformRecord: unknown op '$op' in directive '$directive' — valid: ${KNOWN_OPS.joinToString()}"
             }

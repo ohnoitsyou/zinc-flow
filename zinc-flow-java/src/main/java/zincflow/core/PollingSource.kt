@@ -32,7 +32,7 @@ abstract class PollingSource protected constructor(private val name: String, pol
     private val pollIntervalMillis: Long = pollIntervalMillis.takeIf { it > 0 } ?: 1000
 
     @Volatile
-    private var running = false
+    protected var running = false
 
     @Volatile
     private var loop: Thread? = null

@@ -70,8 +70,8 @@ object PluginLoader {
             Files.list(dir).use { entries ->
                 entries
                     .filter { it.fileName.toString().endsWith(".jar") }
-                    .sorted()
-            }.toList()
+                    .sorted().toList()
+            }
         } catch (ex: IOException) {
             log.warn("plugin directory scan failed: {} — {}", dir, ex.toString())
             return Summary(listOf(), listOf(), listOf(), dir, listOf(), null)

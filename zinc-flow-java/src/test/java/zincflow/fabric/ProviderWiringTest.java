@@ -39,11 +39,11 @@ final class ProviderWiringTest {
         context.addProvider(prov);
 
         Processor noop = ProcessorResult.Single.Companion::invoke;
-        var pipeline = new Pipeline(singleNoop(noop), Pipeline.DEFAULT_MAX_HOPS, null, context, null);
+        var pipeline = new Pipeline(singleNoop(noop), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
         pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
 
         assertEquals(1, prov.size());
-        assertEquals(ProvenanceProvider.EventType.PROCESSED, prov.getRecent(1).get(0).type);
+        assertEquals(ProvenanceProvider.EventType.PROCESSED, prov.getRecent(1).getFirst().type);
     }
 
     @Test
@@ -85,7 +85,7 @@ final class ProviderWiringTest {
 
         Processor logger = ProcessorResult.Single.Companion::invoke;
         var graph = new PipelineGraph(Map.of("logger", logger), Map.of(), List.of("logger"));
-        var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, null, context, null);
+        var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
 
         assertTrue(pipeline.disableProvider("logging"));
         assertEquals(ComponentState.DISABLED, pipeline.processorState("logger"),
@@ -99,7 +99,7 @@ final class ProviderWiringTest {
     @Test
     void addProcessorUsesRegistry() {
         var registry = new Registry();
-        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, null, registry);
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, new ProcessorContext(), registry);
 
         assertTrue(pipeline.addProcessor("log", "LogAttribute",
                 Map.of("prefix", "[x] "), List.of(), Map.of()));

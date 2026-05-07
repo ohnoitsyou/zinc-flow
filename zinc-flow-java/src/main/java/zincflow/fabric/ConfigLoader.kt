@@ -1,7 +1,5 @@
 package zincflow.fabric
 
-import com.fasterxml.jackson.dataformat.yaml.YAMLMapper
-import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.yaml.snakeyaml.Yaml
@@ -13,6 +11,7 @@ import zincflow.fabric.ConfigOverlay.Resolved
 import zincflow.fabric.ConfigOverlay.load
 import java.io.IOException
 import java.nio.file.Path
+
 
 /** Builds a [PipelineGraph] from a YAML config file.
  * 
@@ -63,6 +62,9 @@ flow:
     a:
       success: [b]
  */
+class ConfigProcessingException(msg: String, ex: Throwable? = null) : RuntimeException(msg, ex)
+data class ProcessorSpec(val type: String, val config: Map<String, String>)
+
 class ConfigLoader @JvmOverloads constructor(
     private val registry: Registry,
     context: ProcessorContext? = ProcessorContext(),
@@ -72,7 +74,6 @@ class ConfigLoader @JvmOverloads constructor(
     /** Recorded shape of a processor definition (type + config) from the
      * last successful load. Keyed by processor name; consulted on the
      * next load to decide which instances can be reused. */
-    class ProcessorSpec(val type: String, val config: Map<String, String>) { }
 
     private val context: ProcessorContext = context ?: ProcessorContext()
     private var lastSpecs: MutableMap<String, ProcessorSpec> = mutableMapOf()
@@ -126,27 +127,59 @@ class ConfigLoader @JvmOverloads constructor(
     }
 
     fun load(yamlSource: String?): PipelineGraph {
+//        val mapper = ObjectMapper(YAMLFactory.builder().configure(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION, true).build()).findAndRegisterModules()
+//        val w = mapper.readValue(yamlSource, FlowWrapper::class.java)
+//        loadFromObjectMapper(w)
+
         val parsed = Yaml().load<Any?>(yamlSource)
         require(parsed is MutableMap<*, *>) { "config: top-level must be a map" }
-        return load(normalizeTop(parsed))
+        val top = normalizeTop(parsed)
+        return load(top)
     }
 
-    private fun loadFromYamlFile(path: Path) {
-        val flow = yamlParser.readValue<FlowWrapper>(path.toFile())
+    private fun loadFromObjectMapper(flowWrapper: FlowWrapper): PipelineGraph {
+        val validationResult = FlowValidator.validate(flowWrapper.flow.processors.keys, flowWrapper.flow.connections)
+        require(validationResult.errors.isEmpty()) {
+            "config: flow validation failed with ${validationResult.errors.size} error(s):\n" + validationResult.errors.joinToString("\n")
+        }
+        for (warn in validationResult.warnings) {
+            log.warn("flow warning: $warn")
+        }
+
+        flowWrapper.flow.processors.map {
+
+        }
+
+        return PipelineGraph(mapOf(), mapOf(), listOf(), 0)
+    }
+
+    private fun instantiateProcessors(processors: Map<String, ConfigProcessor>) {
+        val createdProcessors = mutableMapOf<String, Processor>()
+        val specs = mutableMapOf<String, ProcessorSpec>()
+        processors.forEach { (name, processor) ->
+            val spec = ProcessorSpec(processor.type, processor.config)
+            val last = lastSpecs[name]
+            val proc: Processor = if (last != null && last == spec && lastProcessors.containsKey(name)) {
+                lastProcessors[name]!!
+            } else {
+                registry.create(spec.type, spec.config, context)!!
+            }
+            createdProcessors[name] = proc
+            specs[name] = spec
+        }
     }
 
     private fun load(effective: Map<String, Any>): PipelineGraph {
-        val flowRaw = effective["flow"]
-        require(flowRaw is Map<*, *>) { "config: missing 'flow' section" }
+        val flowRaw = effective["flow"] as? Map<*, *> ?: throw ConfigProcessingException("config: missing 'flow' section")
 
         // --- processors ---
-        val procsRaw = flowRaw["processors"] as? Map<*, *> ?: throw IllegalStateException("config: 'flow.processors' must be a map")
+        val procsRaw = flowRaw["processors"] as? Map<*, *> ?: throw ConfigProcessingException("config: 'flow.processors' must be a map")
         val processors: MutableMap<String, Processor> = mutableMapOf()
         val specs: MutableMap<String, ProcessorSpec> = mutableMapOf()
         for (entry in procsRaw.entries) {
             val name: String = entry.key as String
-            val processor = entry.value as? Map<*, Any?> ?: throw IllegalStateException("config: processor '$name' must be a map" )
-            val type = processor[TYPE_KEY]?.toString() ?: throw IllegalStateException("config: processor '$name' missing 'type'")
+            val processor = entry.value as? Map<*, Any?> ?: throw ConfigProcessingException("config: processor '$name' must be a map" )
+            val type = processor[TYPE_KEY]?.toString() ?: throw ConfigProcessingException("config: processor '$name' missing 'type'")
             val config = stringMap(processor[CONFIG_KEY])
             val spec = ProcessorSpec(type, config)
 
@@ -154,11 +187,11 @@ class ConfigLoader @JvmOverloads constructor(
             // byte-identical — keeps in-flight state (counters, caches,
             // connections) across a reload instead of churning every
             // processor on a cosmetic config change.
-            val prior = lastSpecs.get(name)
+            val prior = lastSpecs[name]
             val p = if (prior != null && prior == spec && lastProcessors.containsKey(name)) {
                 lastProcessors[name]!!
             } else {
-                registry.create(spec.type, spec.config, context)!!
+                registry.create(spec.type, spec.config, context) ?: throw ConfigProcessingException("config: Unknown procesor type: '${spec.type}")
             }
             processors[name] = p
             specs[name] = spec
@@ -171,10 +204,11 @@ class ConfigLoader @JvmOverloads constructor(
         if (connsRaw is MutableMap<*, *>) {
             for (fromEntry in connsRaw.entries) {
                 val from: String = fromEntry.key.toString()
-                require(fromEntry.value is MutableMap<*, *>) { "config: connections['$from'] must be a map of relationship → targets" }
+                val entryCons = fromEntry.value as? Map<*, *>  ?: throw ConfigProcessingException("config: connections['$from'] must be a map of relationship → targets" )
+//                require(entryCons is Map<*, *>) { "config: connections['$from'] must be a map of relationship → targets" }
                 val relationships: MutableMap<String, List<String>> = mutableMapOf()
-                for (relEntry in relationships.entries) {
-                    val rel: String = relEntry.key
+                for (relEntry in entryCons.entries) {
+                    val rel: String = relEntry.key as String
                     val targets: List<String> = stringList(relEntry.value)
                     relationships[rel] = targets
                 }
@@ -184,24 +218,35 @@ class ConfigLoader @JvmOverloads constructor(
 
         // --- entry points ---
         val entryPoints: List<String> = stringList(flowRaw["entryPoints"])
-        require(!entryPoints.isEmpty()) { "config: 'flow.entryPoints' must be a non-empty list" }
-        for (ep in entryPoints) {
-            require(processors.containsKey(ep)) { "config: entryPoint '$ep' is not defined in processors" }
+        if(entryPoints.isEmpty()) throw ConfigProcessingException("config: 'flow.entryPoints' must be a non-empty list" )
+//        require(!entryPoints.isEmpty()) { "config: 'flow.entryPoints' must be a non-empty list" }
+        entryPoints.filterNot { processors.containsKey(it) }.takeIf { it.isNotEmpty() }?.let { e ->
+            throw ConfigProcessingException(e.joinToString("\n") { "config: entryPoint '$it' is not defined in processors" })
         }
-        for (connEntry in connections.entries) {
-            val from = connEntry.key
-            require(processors.containsKey(from)) { "config: connection source '$from' is not defined" }
+
+//        for (ep in entryPoints) {
+//            check(processors.containsKey(ep)) { "config: entryPoint '$ep' is not defined in processors" }
+//        }
+        connections.keys.filterNot { processors.containsKey(it) }.takeIf { it.isNotEmpty() }?.let { e ->
+            throw ConfigProcessingException(e.joinToString("\n") { "config: connection source '$it' is not defined" })
         }
+//        for (connEntry in connections.entries) {
+//            val from = connEntry.key
+//            require(processors.containsKey(from)) { "config: connection source '$from' is not defined" }
+//        }
 
         // Full DAG check — accumulates every unknown-target error plus
         // cycle / unreachable warnings into one report. Errors trip a
         // single aggregate throw so the operator sees every issue at
         // once; warnings surface through the logger.
         val validation = FlowValidator.validate(processors.keys, connections)
-        require(validation.errors.isEmpty()) {
-            ("config: flow validation failed with ${validation.errors.size} error(s):\n"
-                    + validation.errors.joinToString("\n"))
+        if(validation.errors.isNotEmpty()) {
+            throw ConfigProcessingException("config: flow validation failed with ${validation.errors.size} error(s):\n ${validation.errors.joinToString("\n")}")
         }
+//        require(validation.errors.isEmpty()) {
+//            ("config: flow validation failed with ${validation.errors.size} error(s):\n"
+//                    + validation.errors.joinToString("\n"))
+//        }
         for (warn in validation.warnings) {
             log.warn("flow warning: {}", warn)
         }
@@ -326,7 +371,6 @@ class ConfigLoader @JvmOverloads constructor(
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(ConfigLoader::class.java)
-        private val yamlParser = YAMLMapper()
 
 
         /** Shared YAML keys for `{type, config}` blocks (processors,
@@ -364,7 +408,8 @@ class ConfigLoader @JvmOverloads constructor(
  * The root wrapper for the YAML document.
  */
 data class FlowWrapper(
-    val flow: FlowDefinition
+    val flow: FlowDefinition,
+    val sources: Map<String, ConfigSource>
 )
 
 /**
@@ -373,15 +418,17 @@ data class FlowWrapper(
  */
 data class FlowDefinition(
     val entryPoints: List<String>,
-    val processors: Map<String, Processor>,
-    val connections: Map<String, Map<String, List<String>>>
+    val processors: Map<String, ProcessorSpec>,
+    val connections: Map<String, Map<String, List<String>>>,
 )
 
 /**
  * Represents an individual processor unit.
  * 'config' is a Map to allow for varying configurations based on the processor type.
  */
-data class Processor(
+data class ConfigProcessor (
     val type: String,
-    val config: Map<String, Any>
+    val config: Map<String, String> = mapOf(),
 )
+
+data class ConfigSource(val type: String, val config: Map<String, Any> = mapOf())

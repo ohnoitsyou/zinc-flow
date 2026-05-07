@@ -81,6 +81,7 @@ final class ExtractTextTest {
     @Test
     void blankPatternRejectedAtConstruction() {
         assertThrows(IllegalArgumentException.class, () -> new ExtractText("", "", null));
-        assertThrows(IllegalArgumentException.class, () -> new ExtractText(null, "", null));
+        // ExtractText doesn't accept a null for a regex
+        assertThrows(NullPointerException.class, () -> new ExtractText(null, "", null));
     }
 }

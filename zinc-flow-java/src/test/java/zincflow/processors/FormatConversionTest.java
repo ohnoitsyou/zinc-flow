@@ -216,7 +216,7 @@ final class FormatConversionTest {
         Map<String, Object> record = flat(1L, "alice", true);
         var ff = FlowFile.Companion.create(RecordContent.Companion.invoke(List.of(record), schema), Map.of());
 
-        var written = (ProcessorResult.Single) new ConvertRecordToOCF("codec").process(ff);
+        var written = (ProcessorResult.Single) new ConvertRecordToOCF(null).process(ff);
         var read    = (ProcessorResult.Single) new ConvertOCFToRecord().process(written.flowFile);
         var rc = (RecordContent) read.flowFile.getContent();
 
@@ -246,7 +246,7 @@ final class FormatConversionTest {
         // Zero records → pass through the original FlowFile (matches C#'s
         // SingleResult.Rent(ff) early-return). No OCF bytes produced.
         var ff = FlowFile.Companion.create(RecordContent.Companion.invoke(List.of(), null), Map.of());
-        var written = (ProcessorResult.Single) new ConvertRecordToOCF("codec").process(ff);
+        var written = (ProcessorResult.Single) new ConvertRecordToOCF(null).process(ff);
         assertSame(ff, written.flowFile);
     }
 

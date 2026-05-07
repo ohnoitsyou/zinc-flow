@@ -116,6 +116,7 @@ class GetFile @JvmOverloads constructor(
         frameCount: Int
     ): FlowFile {
         val attrs = buildMap {
+            base.attributes.forEach { (key, value) -> put(key, value) }
             put(FlowFileAttributes.FILENAME, file.fileName.toString())
             put(FlowFileAttributes.PATH, file.toAbsolutePath().toString())
             put(FlowFileAttributes.SOURCE, name())

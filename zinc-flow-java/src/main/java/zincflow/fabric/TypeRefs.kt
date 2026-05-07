@@ -11,8 +11,8 @@ object TypeRefs {
      * difference (`"1.2"` vs `"1.2.0"`) sorts as equal;
      * non-numeric segments compare lexicographically. */
     fun compareVersions(a: String, b: String): Int {
-        val aSplit: List<String> = a.split("\\.")
-        val bSplit: List<String> = b.split("\\.")
+        val aSplit: List<String> = a.split(".")
+        val bSplit: List<String> = b.split(".")
         val len = maxOf(aSplit.size, bSplit.size)
         for (i in 0..<len) {
             val ap = if (i < aSplit.size) aSplit[i] else "0"

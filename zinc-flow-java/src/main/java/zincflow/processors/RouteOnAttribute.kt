@@ -4,6 +4,7 @@ import zincflow.core.FlowFile
 import zincflow.core.Processor
 import zincflow.core.ProcessorResult
 import zincflow.core.Relationships
+import zincflow.fabric.ConfigProcessingException
 import java.util.Locale
 import kotlin.Array
 import kotlin.Boolean
@@ -121,12 +122,13 @@ class RouteOnAttribute(spec: String) : Processor {
                     "RouteOnAttribute: malformed route at index $i: '$entry' — expected format: '<name>: <attr OP value>'"
                 }
 
-                val (routeName, condition) = entry.split(":", limit = 1)
+                val (routeName, condition) = entry.split(":", limit = 2).mapNotNull { e -> e.trim().takeIf { it.isNotEmpty() } }
                 // EXISTS takes no value: "routeA: attr EXISTS" is valid.
-                val parts = condition.split("\\s+".toRegex(), limit = 3)
-                require(parts.size >= 2) {
-                    "RouteOnAttribute: route '$routeName' has malformed condition: '$condition' — expected 'attr OP [value]'"
-                }
+                val parts = condition.split("\\s+".toRegex(), limit = 3).mapNotNull { e -> e.trim().takeIf { it.isNotEmpty() } }
+                if (parts.size < 2) { throw IllegalArgumentException("RouteOnAttribute: route '$routeName' has malformed condition: '$condition' — expected 'attr OP [value]'") }
+//                require(parts.size >= 2) {
+//                    "RouteOnAttribute: route '$routeName' has malformed condition: '$condition' — expected 'attr OP [value]'"
+//                }
 
                 val op: Op = Op.parse(parts[1], routeName)
                 val value = if (parts.size >= 3) parts[2] else ""

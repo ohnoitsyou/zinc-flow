@@ -1,5 +1,6 @@
 package zincflow.processors;
 
+import com.jayway.jsonpath.InvalidPathException;
 import org.junit.jupiter.api.Test;
 import zincflow.core.FlowFile;
 import zincflow.core.ProcessorResult;
@@ -188,7 +189,8 @@ final class ExpressionAndQueryTest {
     @Test
     void transformRecordEmptySpecRejected() {
         assertThrows(IllegalArgumentException.class, () -> new TransformRecord(""));
-        assertThrows(IllegalArgumentException.class, () -> new TransformRecord(null));
+        // TransformRecord doesn't accept null
+        assertThrows(NullPointerException.class, () -> new TransformRecord(null));
     }
 
     @Test
@@ -246,6 +248,8 @@ final class ExpressionAndQueryTest {
         assertThrows(IllegalArgumentException.class, () -> new QueryRecord(""));
         // Note: JsonPath's compile is lenient — truly invalid syntax like "][["
         // surfaces at compile time.
-        assertThrows(IllegalArgumentException.class, () -> new QueryRecord("][?("));
+        // Logic changed to allow the JsonPath compiler throw its own exception
+//        assertThrows(IllegalArgumentException.class, () -> new QueryRecord("][?("));
+        assertThrows(InvalidPathException.class, () -> new QueryRecord("][?("));
     }
 }

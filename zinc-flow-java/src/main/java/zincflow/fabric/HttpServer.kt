@@ -554,7 +554,9 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 400, "path param 'id' is not a long")
             return
         }
-        ctx.contentType("application/json").result(json.writeValueAsBytes(shape(prov.getEvents(id))))
+        val events = prov.getEvents(id)
+        val shape = shape(events)
+        ctx.contentType("application/json").result(json.writeValueAsBytes(shape))
     }
 
     // --- Processor admin ---

@@ -1,14 +1,11 @@
 package zincflow.providers
 
-import jdk.internal.vm.ThreadContainers.container
 import org.apache.commons.collections4.queue.CircularFifoQueue
 import zincflow.core.ComponentState
 import zincflow.core.Provider
 import zincflow.core.ProviderPlugin
-import java.util.Collections
-import java.util.function.IntFunction
 import kotlin.concurrent.Volatile
-import kotlin.math.min
+
 
 /** Provenance recorder — a bounded ring buffer of FlowFile lifecycle
  * events (created / processed / routed / dropped / failed). Oldest
@@ -28,7 +25,7 @@ class ProvenanceProvider @JvmOverloads constructor(val capacity: Int = DEFAULT_C
         @JvmField val type: EventType?,
         @JvmField val component: String?,
         @JvmField val details: String?,
-        @JvmField val timestampMillis: Long
+        @JvmField val timestampMillis: Long,
     ) {
         companion object {
             val EMPTY = Event(-1, EventType.UNKNOWN, "", "", 0)
@@ -43,7 +40,6 @@ class ProvenanceProvider @JvmOverloads constructor(val capacity: Int = DEFAULT_C
         }
     }
 
-    private val b = CircularBuffer<Event>(capacity)
     private val buffer = CircularFifoQueue<Event>(capacity)
     private val lock = Any()
     private var head = 0 // next write slot
@@ -103,6 +99,7 @@ class ProvenanceProvider @JvmOverloads constructor(val capacity: Int = DEFAULT_C
         )
         synchronized(lock) {
             buffer.add(evt)
+            if(count < capacity()) count++
         }
     }
 
@@ -116,18 +113,11 @@ class ProvenanceProvider @JvmOverloads constructor(val capacity: Int = DEFAULT_C
 
     /** Most recent N events across every FlowFile, oldest first within
      * the window. If fewer than N are available all are returned. */
+    // TODO: Def not the most efficient, but it gets the job done for now
     fun getRecent(n: Int): List<Event> {
-        if (n <= 0) return mutableListOf()
-        val out = mutableListOf<Event>()
-        synchronized(lock) {
-            val toTake = min(n, count)
-            val start = ((head - toTake) % capacity + capacity) % capacity
-            for (i in 0..< toTake) {
-                val e = buffer[(start + i) % capacity]
-                if (e != null) out.add(e)
-            }
-        }
-        return out
+        if (n <= 0) return listOf()
+        val take = n.coerceAtMost(count)
+        return buffer.asIterable().reversed().asSequence().take(take).toList().asReversed()
     }
 
     class Plugin : ProviderPlugin {

@@ -52,8 +52,8 @@ class ProviderRegistry {
     private fun resolveKey(type: String): String? {
         if (type.isEmpty()) return null
         if (type.contains("@")) return (if (versioned.containsKey(type)) type else null)!!
-        val latest = latestVersion.get(type)
-        return (if (latest == null) null else TypeRefs.qualify(type, latest))!!
+        val latest = latestVersion[type]
+        return (if (latest == null) null else TypeRefs.qualify(type, latest))
     }
 
     fun create(type: String, config: MutableMap<String, Any>): Provider? {

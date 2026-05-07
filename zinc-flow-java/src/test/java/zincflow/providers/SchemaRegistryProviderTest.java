@@ -126,7 +126,8 @@ final class SchemaRegistryProviderTest {
                 new SchemaRegistryProvider.Schema(1, "s", 0, "{}"));
         assertThrows(IllegalArgumentException.class, () ->
                 new SchemaRegistryProvider.Schema(0, "s", 1, "{}"));
-        assertThrows(IllegalArgumentException.class, () ->
+        // Schema doesn't accept null for the definition field
+        assertThrows(NullPointerException.class, () ->
                 new SchemaRegistryProvider.Schema(1, "s", 1, null));
     }
 }
