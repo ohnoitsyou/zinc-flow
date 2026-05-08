@@ -1,6 +1,7 @@
 package zincflow.fabric
 
 import zincflow.core.Processor
+import zincflow.core.Source
 import java.util.Collections
 import kotlin.collections.mapValues
 import kotlin.collections.toMap
@@ -22,28 +23,32 @@ data class PipelineGraph @JvmOverloads constructor(
     val processors: Map<String, Processor>,
     val connections: Map<String, Map<String, List<String>>>,
     val entryPoints: List<String>,
+    val sources: List<Source>,
     val graphVersion: Int = 0,
 ) {
     companion object {
-        fun empty() = PipelineGraph(emptyMap(), emptyMap(), emptyList())
+        fun empty() = PipelineGraph(emptyMap(), emptyMap(), emptyList(), emptyList())
         fun of(
             processors: Map<String, Processor>,
             connections: Map<String, Map<String, List<String>>>,
             entryPoints: List<String>,
+            sources: List<Source>,
             graphVersion: Int = 0
         ): PipelineGraph {
             return PipelineGraph(
-                processors = Collections.unmodifiableMap(processors.toMap()),
-                connections = Collections.unmodifiableMap(
-                    connections.mapValues { (_, rels) ->
-                        Collections.unmodifiableMap(
-                            rels.mapValues { (_, targets) ->
-                                java.util.List.copyOf(targets)
-                            }.toMap()
-                        )
-                    }.toMap()
-                ),
-                entryPoints = java.util.List.copyOf(entryPoints),
+                processors = processors.toMap(),
+                connections = connections.toMap(),
+//                    Collections.unmodifiableMap(
+//                    connections.mapValues { (_, rels) ->
+//                        Collections.unmodifiableMap(
+//                            rels.mapValues { (_, targets) ->
+//                                java.util.List.copyOf(targets)
+//                            }.toMap()
+//                        )
+//                    }.toMap()
+//                ),
+                entryPoints = entryPoints.toList(),
+                sources = sources.toList(),
                 graphVersion = graphVersion + 1
             )
         }

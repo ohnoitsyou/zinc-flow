@@ -23,7 +23,8 @@ final class GraphMutationTest {
         var graph = new PipelineGraph(
                 Map.of("a", passThrough(), "b", passThrough(), "c", passThrough()),
                 Map.of("a", Map.of("success", List.of("b"))),
-                List.of("a"));
+                List.of("a"),
+                List.of());
         return new Pipeline(graph);
     }
 
@@ -123,7 +124,8 @@ final class GraphMutationTest {
         var graph = new PipelineGraph(
                 Map.of("ingress", ingress, "side", side),
                 Map.of(),
-                List.of("ingress"));
+                List.of("ingress"),
+                List.of());
         var p = new Pipeline(graph);
 
         p.ingest(FlowFile.Companion.create(new byte[0], Map.of()));

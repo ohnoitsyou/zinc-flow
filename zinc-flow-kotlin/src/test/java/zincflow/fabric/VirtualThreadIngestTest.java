@@ -49,7 +49,7 @@ final class VirtualThreadIngestTest {
             }
         };
 
-        var graph = new PipelineGraph(Map.of("sleeper", sleeper), Map.of(), List.of("sleeper"));
+        var graph = new PipelineGraph(Map.of("sleeper", sleeper), Map.of(), List.of("sleeper"), List.of());
         var pipeline = new Pipeline(graph);
         server = new HttpServer(pipeline).start(0);
 

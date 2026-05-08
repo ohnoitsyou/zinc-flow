@@ -123,9 +123,9 @@ class Pipeline @JvmOverloads constructor(
     fun addProcessor(
         name: String,
         type: String,
-        config: MutableMap<String, String>,
-        requires: MutableList<String>,
-        connections: MutableMap<String, MutableList<String>>
+        config: Map<String, String>,
+        requires: List<String>,
+        connections: Map<String, List<String>>
     ): Boolean {
         if (name.isEmpty()) return false
         val g = graph
@@ -141,11 +141,13 @@ class Pipeline @JvmOverloads constructor(
         newProcessors[name] = proc
         val newConnections = g.connections.toMutableMap()
         if (connections.isNotEmpty()) {
-            val copy: MutableMap<String, MutableList<String>> = mutableMapOf()
-            connections.forEach { (k: String, v: MutableList<String>) -> copy[k] = v.toMutableList() }
+            val copy: MutableMap<String, List<String>> = mutableMapOf()
+            connections.forEach { (k: String, v: List<String>) -> copy[k] = v.toList() }
+            val c = connections.entries.associate { it.key to it.value }
+            log.info("##### Add Processor: copy matches c: ${copy == c}")
             newConnections[name] = copy
         }
-        graph = PipelineGraph(newProcessors, newConnections, g.entryPoints)
+        graph = PipelineGraph(newProcessors, newConnections, g.entryPoints, listOf())
         recordProcessorDef(name, type, config, req)
         PipelineMetrics.recordMutation()
         return true
@@ -157,7 +159,7 @@ class Pipeline @JvmOverloads constructor(
         val newProcessors = g.processors.filterNot { it.key == name }
         val newConnections = g.connections.filterNot { it.key == name }
         val newEntries = g.entryPoints.filterNot { it == name }
-        graph = PipelineGraph(newProcessors, newConnections, newEntries)
+        graph = PipelineGraph(newProcessors, newConnections, newEntries, listOf())
         processorStates.remove(name)
         processorDefs.remove(name)
         PipelineMetrics.recordMutation()
@@ -194,7 +196,7 @@ class Pipeline @JvmOverloads constructor(
 
         val newProcessors = g.processors.toMutableMap()
         newProcessors[name] = rebuilt
-        graph = PipelineGraph.of(newProcessors, g.connections, g.entryPoints)
+        graph = PipelineGraph.of(newProcessors, g.connections, g.entryPoints, g.sources)
 
         val prior = processorDefs[name]
         val requires = prior?.requires ?: mutableListOf()
@@ -241,7 +243,7 @@ class Pipeline @JvmOverloads constructor(
         targets.add(to)
         newRelationships[relationship] = targets.toMutableList()
         newConnections[from] = newRelationships
-        graph = PipelineGraph(g.processors, newConnections, g.entryPoints)
+        graph = PipelineGraph(g.processors, newConnections, g.entryPoints, listOf())
         PipelineMetrics.recordMutation()
         return EditResult.success()
     }
@@ -265,7 +267,7 @@ class Pipeline @JvmOverloads constructor(
         } else {
             newConnections[from] = newRelationships
         }
-        graph = PipelineGraph(g.processors, newConnections, g.entryPoints)
+        graph = PipelineGraph(g.processors, newConnections, g.entryPoints, listOf())
         PipelineMetrics.recordMutation()
         return EditResult.success()
     }
@@ -299,7 +301,7 @@ class Pipeline @JvmOverloads constructor(
         } else {
             newConnections[from] = relationships.entries.associate { (rel: String, ts: List<String>) -> rel to ts.toMutableList() }
         }
-        graph = PipelineGraph(g.processors, newConnections, g.entryPoints)
+        graph = PipelineGraph(g.processors, newConnections, g.entryPoints, listOf())
         PipelineMetrics.recordMutation()
         return EditResult.success()
     }
@@ -314,7 +316,7 @@ class Pipeline @JvmOverloads constructor(
             .takeIf { it.isNotEmpty() }
             ?.let { return EditResult.fail(it.joinToString("\n") { p -> "processor '$p' not found" }) }
 
-        graph = PipelineGraph(g.processors, g.connections, names.toList())
+        graph = PipelineGraph(g.processors, g.connections, names.toList(), listOf())
         return EditResult.success()
     }
 

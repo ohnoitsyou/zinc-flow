@@ -36,7 +36,8 @@ final class PipelineTest {
                         "mark",  new UpdateAttribute("stage", "processed"),
                         "sink",  sink),
                 Map.of("mark", Map.of("success", List.of("sink"))),
-                List.of("mark"));
+                List.of("mark"),
+                List.of());
         var pipeline = new Pipeline(graph);
 
         pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
@@ -61,7 +62,8 @@ final class PipelineTest {
         var graph = new PipelineGraph(
                 Map.of("boom", boom, "onFail", failureSink),
                 Map.of("boom", Map.of("failure", List.of("onFail"))),
-                List.of("boom"));
+                List.of("boom"),
+                List.of());
         var pipeline = new Pipeline(graph);
 
         pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
@@ -75,7 +77,8 @@ final class PipelineTest {
         var graph = new PipelineGraph(
                 Map.of("boom", boom),
                 Map.of(),
-                List.of("boom"));
+                List.of("boom"),
+                List.of());
         var pipeline = new Pipeline(graph);
         assertDoesNotThrow(() -> pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of())));
         assertEquals(1L, pipeline.stats().snapshot().get("totalFailed"));
@@ -88,7 +91,8 @@ final class PipelineTest {
         var graph = new PipelineGraph(
                 Map.of("loop", loop),
                 Map.of("loop", Map.of("success", List.of("loop"))),
-                List.of("loop"));
+                List.of("loop"),
+                List.of());
         var pipeline = new Pipeline(graph, 5);
         assertDoesNotThrow(() -> pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of())),
                 "hop cap must protect against cycles");

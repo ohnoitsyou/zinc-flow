@@ -19,7 +19,7 @@ final class MetricsTest {
     @Test
     void scrapeContainsProcessorCounter() {
         Processor noop = ff -> new ProcessorResult.Dropped();
-        var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"));
+        var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"), List.of());
         var metrics = new Metrics();
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics);
 
@@ -38,7 +38,7 @@ final class MetricsTest {
     @Test
     void statsAndMetricsAgree() {
         Processor noop = ProcessorResult.Single.Companion::invoke;
-        var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"));
+        var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"), List.of());
         var metrics = new Metrics();
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics);
 
@@ -59,7 +59,7 @@ final class MetricsTest {
         // a fresh registry is allocated so /metrics always works and the
         // call sites never need to null-check.
         Processor noop = ff -> new ProcessorResult.Dropped();
-        var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"));
+        var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"), List.of());
         var pipeline = new Pipeline(graph);
         assertNotNull(pipeline.metrics());
         assertDoesNotThrow(() -> pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of())));
@@ -82,7 +82,7 @@ final class MetricsTest {
         // Synchronous ingest paths all run to completion on the caller
         // thread, so after N ingests the gauge must read 0.
         Processor noop = ProcessorResult.Single.Companion::invoke;
-        var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"));
+        var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"), List.of());
         var metrics = new Metrics();
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics);
 
@@ -106,7 +106,7 @@ final class MetricsTest {
             try { released.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             return ProcessorResult.Single.Companion.invoke(ff);
         };
-        var graph = new PipelineGraph(Map.of("blocker", blocker), Map.of(), List.of("blocker"));
+        var graph = new PipelineGraph(Map.of("blocker", blocker), Map.of(), List.of("blocker"), List.of());
         var metrics = new Metrics();
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics);
 
@@ -130,7 +130,7 @@ final class MetricsTest {
         var stub = new StubSource("stub-a", "GenerateFlowFile");
 
         Processor noop = ff -> new ProcessorResult.Dropped();
-        var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"));
+        var graph = new PipelineGraph(Map.of("noop", noop), Map.of(), List.of("noop"), List.of());
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics);
         pipeline.addSource(stub);
 

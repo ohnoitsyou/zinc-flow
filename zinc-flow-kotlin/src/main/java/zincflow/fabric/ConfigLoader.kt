@@ -152,7 +152,8 @@ class ConfigLoader @JvmOverloads constructor(
 
         }
 
-        return PipelineGraph(mapOf(), mapOf(), listOf(), 0)
+        return PipelineGraph.empty()
+//        return PipelineGraph(mapOf(), mapOf(), listOf(), listOf(), 0)
     }
 
     private fun instantiateProcessors(processors: Map<String, ConfigProcessor>) {
@@ -284,7 +285,7 @@ class ConfigLoader @JvmOverloads constructor(
 
         val elapsed = appStartTime.elapsedNow()
         log.info("##### Pipeline processing complete: ${elapsed.inWholeMilliseconds} ms #####")
-        return PipelineGraph(processors, connections, entryPoints)
+        return PipelineGraph(processors, connections, entryPoints, listOf())
     }
 
     /** Build every provider declared under `providers:`. Same

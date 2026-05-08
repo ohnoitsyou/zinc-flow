@@ -48,9 +48,3 @@ flow:
     LogAttribute:
       success:
       - sink
-  sources:
-    generate:
-      type: GenereateFlowFile
-      config:
-        content: "Hello World!"
-        pollIntervalMs: 5000

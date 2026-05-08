@@ -49,6 +49,7 @@ object YamlEmitter {
 
         val top = mutableMapOf<String, Any>()
         top["flow"] = flow
+        top["sources"] = graph.sources
 
         return dumper().dump(top)
     }

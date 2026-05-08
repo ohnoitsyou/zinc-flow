@@ -116,13 +116,12 @@ object Zinc {
         }
 
         val loader = ConfigLoader(registry, context, sourceRegistry, providerRegistry)
-        val graph: PipelineGraph?
-        if (configPath != null && Files.isRegularFile(configPath)) {
+        val graph: PipelineGraph = if (configPath != null && Files.isRegularFile(configPath)) {
             log.info("loading pipeline from {}", configPath.toAbsolutePath())
-            graph = loader.loadFromFile(configPath)
+            loader.loadFromFile(configPath)
         } else {
             log.info("no config.yaml found — using built-in demo pipeline")
-            graph = demoGraph()
+            demoGraph()
         }
         val metrics = Metrics()
         val pipeline = Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics, context, registry)
@@ -322,7 +321,7 @@ object Zinc {
             ),
             "elevate" to mutableMapOf(Relationships.SUCCESS to mutableListOf("tail"))
         )
-        return PipelineGraph(processors, connections, listOf("ingress"))
+        return PipelineGraph(processors, connections, listOf("ingress"), listOf())
     }
 
     /** Static validation without starting the worker. Exit codes match
@@ -395,7 +394,7 @@ object Zinc {
         val connections = mutableMapOf(
             "tag" to mutableMapOf(Relationships.SUCCESS to mutableListOf("sink"))
         )
-        val graph = PipelineGraph(processors, connections, listOf("tag"))
+        val graph = PipelineGraph(processors, connections, listOf("tag"), listOf())
         val pipeline = Pipeline(graph)
 
         val payload = "bench payload data here".toByteArray(StandardCharsets.UTF_8)

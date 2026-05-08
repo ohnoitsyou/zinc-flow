@@ -131,7 +131,6 @@ final class GraphMutationHttpTest {
         assertEquals(java.util.List.of("b", "c"), pipeline.graph().getEntryPoints());
     }
 
-    // Changing to 400. Sending an entrypoint that doesn't exist isn't a conflict, it's a bad request.
     @Test
     void setEntryPointsUnknownName409() throws Exception {
         var resp = send("PUT", "/api/entrypoints",

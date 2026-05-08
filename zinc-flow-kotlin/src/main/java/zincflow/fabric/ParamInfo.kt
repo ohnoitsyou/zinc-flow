@@ -138,3 +138,19 @@ class ParamInfo(
         }
     }
 }
+
+fun ParamInfo.asMap() : Map<String, Any>{
+    return buildMap {
+        put("name", name ?: "")
+        put("label", label ?: "")
+        put("description", description ?: "")
+        put("kind", kind?.jsonName() ?: "")
+        put("required", required)
+        put("default", defaultValue ?: "")
+        put("placeholder", placeholder ?: "")
+        put("choices", choices ?: listOf<String>())
+        put("valueKind", valueKind?.jsonName() ?: "")
+        put("entryDelim", entryDelim ?: "")
+        put("pairDelim", pairDelim ?: "")
+    }
+}

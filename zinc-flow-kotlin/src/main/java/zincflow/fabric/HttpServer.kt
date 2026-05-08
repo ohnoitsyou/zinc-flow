@@ -588,9 +588,9 @@ class HttpServer @JvmOverloads constructor(
 //                return
 //            }
 
-            val config: MutableMap<String, String> = asStringMap(body[ConfigLoader.CONFIG_KEY])
-            val requires: MutableList<String> = asStringList(body["requires"])
-            val connections: MutableMap<String, MutableList<String>> = asConnections(body["connections"])
+            val config: Map<String, String> = asStringMap(body[ConfigLoader.CONFIG_KEY])
+            val requires: List<String> = asStringList(body["requires"])
+            val connections: Map<String, List<String>> = asConnections(body["connections"])
 
             val ok = pipeline.addProcessor(name, type, config, requires, connections)
             writeStatus(ctx, ok, name, "created", "processor already exists or unknown type")
@@ -1162,49 +1162,35 @@ class HttpServer @JvmOverloads constructor(
                 put("category", info.category ?: "Other")
                 put("configKeys", info.configKeys)
                 put("relationships", info.relationships)
-                put("parameters", info.parameters.map { paramInfoToJson(it) })
+                put("parameters", info.parameters.map { it.asMap() })
             }
         }
-
-        private fun paramInfoToJson(p: ParamInfo): Map<String, Any> {
-            return buildMap {
-                put("name", p.name ?: "")
-                put("label", p.label ?: "")
-                put("description", p.description ?: "")
-                put("kind", p.kind?.jsonName() ?: "")
-                put("required", p.required)
-                put("default", p.defaultValue ?: "")
-                put("placeholder", p.placeholder ?: "")
-                put("choices", p.choices ?: listOf<String>())
-                put("valueKind", p.valueKind?.jsonName() ?: "")
-                put("entryDelim", p.entryDelim ?: "")
-                put("pairDelim", p.pairDelim ?: "")
-            }
-        }
-
         private fun str(o: Any?): String {
             return o?.toString() ?: ""
         }
 
-        private fun asStringMap(raw: Any?): MutableMap<String, String> {
-            if (raw !is MutableMap<*, *>) return mutableMapOf()
-            return raw.entries.associate { (key, value) -> key.toString() to str(value) }.toMutableMap()
+        private fun asStringMap(raw: Any?): Map<String, String> {
+            return if (raw is Map<*, *>) {
+                raw.entries.associate { (key, value) -> key.toString() to str(value) }
+            } else {
+                mapOf()
+            }
         }
 
-        private fun asStringList(raw: Any?): MutableList<String> {
-            if (raw !is MutableList<*>) return mutableListOf()
-            return raw.map { str(it) }.toMutableList()
+        private fun asStringList(raw: Any?): List<String> {
+            if (raw !is List<*>) return listOf()
+            return raw.map { str(it) }
         }
 
-        private fun asConnections(raw: Any?): MutableMap<String, MutableList<String>> {
-            val map = raw as? MutableMap<*, *> ?: return mutableMapOf()
+        private fun asConnections(raw: Any?): Map<String, List<String>> {
+            val map = raw as? Map<*, *> ?: return mapOf()
             return map.entries.associateTo(mutableMapOf()) { (key, value) ->
                 val relationship = key.toString()
                 val targets = when(value) {
                     is List<*> -> value.map { it.toString() }
                     null -> emptyList()
                     else -> listOf(value.toString())
-                }.toMutableList()
+                }
                 relationship to targets
             }
         }

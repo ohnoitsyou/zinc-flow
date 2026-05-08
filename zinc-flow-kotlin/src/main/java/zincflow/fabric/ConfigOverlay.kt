@@ -78,7 +78,7 @@ object ConfigOverlay {
 
     // I think this might be the root of the yaml parsing.
     @Throws(IOException::class)
-    private fun readLayer(role: String?, path: Path?): Layer {
+    private fun readLayer(role: String, path: Path?): Layer {
         if (path == null || !Files.isRegularFile(path)) {
             return Layer(role, path, false, mapOf())
         }
