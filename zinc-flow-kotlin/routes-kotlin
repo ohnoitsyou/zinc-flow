@@ -6,7 +6,7 @@ GET /api/flow
 GET /api/connections
 GET /api/providers
 GET /health
-++ GET /readyz
+!! GET /readyz
 GET /api/provenance
 GET /api/provenance/{id}
 GET /api/sources

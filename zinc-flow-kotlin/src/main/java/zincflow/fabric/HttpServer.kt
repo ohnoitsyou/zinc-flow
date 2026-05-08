@@ -97,6 +97,7 @@ class HttpServer @JvmOverloads constructor(
             .get("/api/processor-stats") { handleProcessorStats(it) }
             .get("/api/connections") { handleConnections(it) }
             .get("/api/flow") { handleFlow(it) }
+            .get("/api/flow/status") { handleFlowStatus(it) }
             .get("/api/registry") { handleRegistry(it) }
             .post("/api/reload") { handleReload(it) }
             .get("/api/providers") { handleProviders(it) }
@@ -375,6 +376,18 @@ class HttpServer @JvmOverloads constructor(
         ctx.contentType("application/json").result(json.writeValueAsBytes(out))
     }
 
+    private fun handleFlowStatus(ctx: Context) {
+        val dirtyStatus = PipelineMetrics.getDirtyStatus()
+        val body = buildMap {
+            put("dirty", dirtyStatus.isClean)
+            put("mutationCounter", dirtyStatus.mutationCounter)
+            put("lastSavedCounter", dirtyStatus.saveCounter)
+            put("lastSaveTick", dirtyStatus.saveTick)
+        }
+
+        ctx.contentType("application/json").result(json.writeValueAsBytes(body))
+    }
+
     @Throws(Exception::class)
     private fun handleRegistry(ctx: Context) {
         // Emit the latest version of each type, matching the C# worker's
@@ -465,15 +478,18 @@ class HttpServer @JvmOverloads constructor(
     // --- Readyz ---
     @Throws(Exception::class)
     private fun handleReadyz(ctx: Context) {
-        val processorCount = pipeline.graph().processors.count()
+        val processors = pipeline.graph().processors
         val sources = pipeline.sources().entries
+        val notRunning = sources.filterNot { source -> source.value.isRunning }
+        val ready = processors.count() > 0 && notRunning.count() == 0
 
         val body = buildMap {
-            put("ready", )
-            put("processors", )
-            put("sourcesTotal", )
-            put("sourcesNotRunning", )
+            put("ready", ready)
+            put("processors", processors.count())
+            put("sourcesTotal", sources.count())
+            put("sourcesNotRunning", notRunning)
         }
+        ctx.contentType("application/json").result(json.writeValueAsBytes(body))
     }
 
     // --- Providers ---
@@ -966,6 +982,7 @@ class HttpServer @JvmOverloads constructor(
             }
         }
 
+        PipelineMetrics.recordSave()
         ctx.status(200).contentType("application/json").result(json.writeValueAsBytes(body))
     }
 

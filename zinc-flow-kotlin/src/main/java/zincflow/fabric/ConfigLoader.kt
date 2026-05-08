@@ -11,6 +11,7 @@ import zincflow.fabric.ConfigOverlay.Resolved
 import zincflow.fabric.ConfigOverlay.load
 import java.io.IOException
 import java.nio.file.Path
+import kotlin.time.TimeSource
 
 
 /** Builds a [PipelineGraph] from a YAML config file.
@@ -123,6 +124,7 @@ class ConfigLoader @JvmOverloads constructor(
 
     fun loadFromOverlay(resolved: Resolved): PipelineGraph {
         lastOverlay = resolved
+        log.info("##### Load From Overlay: ${resolved.effective} #####")
         return load(resolved.effective)
     }
 
@@ -170,9 +172,12 @@ class ConfigLoader @JvmOverloads constructor(
     }
 
     private fun load(effective: Map<String, Any>): PipelineGraph {
+        val appStartTime = TimeSource.Monotonic.markNow()
+        log.info("##### Starting configuration load: $appStartTime #####")
         val flowRaw = effective["flow"] as? Map<*, *> ?: throw ConfigProcessingException("config: missing 'flow' section")
 
         // --- processors ---
+        log.info("Loading processors")
         val procsRaw = flowRaw["processors"] as? Map<*, *> ?: throw ConfigProcessingException("config: 'flow.processors' must be a map")
         val processors: MutableMap<String, Processor> = mutableMapOf()
         val specs: MutableMap<String, ProcessorSpec> = mutableMapOf()
@@ -196,8 +201,10 @@ class ConfigLoader @JvmOverloads constructor(
             processors[name] = p
             specs[name] = spec
         }
+        log.info("Done processors: Loaded ${processors.size} processor(s)")
 
         // --- connections ---
+        log.info("Loading connections")
         val connections: MutableMap<String, MutableMap<String, List<String>>> = mutableMapOf()
 //            HashMap<String, MutableMap<String, MutableList<String>>>()
         val connsRaw = flowRaw["connections"]
@@ -215,14 +222,17 @@ class ConfigLoader @JvmOverloads constructor(
                 connections[from] = relationships
             }
         }
+        log.info("Loaded connections: Loaded ${connections.size} connection(s)")
 
         // --- entry points ---
+        log.info("Loading entry points")
         val entryPoints: List<String> = stringList(flowRaw["entryPoints"])
         if(entryPoints.isEmpty()) throw ConfigProcessingException("config: 'flow.entryPoints' must be a non-empty list" )
 //        require(!entryPoints.isEmpty()) { "config: 'flow.entryPoints' must be a non-empty list" }
         entryPoints.filterNot { processors.containsKey(it) }.takeIf { it.isNotEmpty() }?.let { e ->
             throw ConfigProcessingException(e.joinToString("\n") { "config: entryPoint '$it' is not defined in processors" })
         }
+        log.info("Loaded entry points: Loaded ${entryPoints.size} entry point(s)")
 
 //        for (ep in entryPoints) {
 //            check(processors.containsKey(ep)) { "config: entryPoint '$ep' is not defined in processors" }
@@ -239,6 +249,7 @@ class ConfigLoader @JvmOverloads constructor(
         // cycle / unreachable warnings into one report. Errors trip a
         // single aggregate throw so the operator sees every issue at
         // once; warnings surface through the logger.
+        log.info("Starting flow validation")
         val validation = FlowValidator.validate(processors.keys, connections)
         if(validation.errors.isNotEmpty()) {
             throw ConfigProcessingException("config: flow validation failed with ${validation.errors.size} error(s):\n ${validation.errors.joinToString("\n")}")
@@ -250,6 +261,7 @@ class ConfigLoader @JvmOverloads constructor(
         for (warn in validation.warnings) {
             log.warn("flow warning: {}", warn)
         }
+        log.info("Flow validation complete: is valid: ${validation.ok()}")
 
         // Commit the parsed spec + processor instances so the next
         // load can diff against them. Only happens after validation
@@ -261,8 +273,17 @@ class ConfigLoader @JvmOverloads constructor(
         lastProcessors.clear()
         lastProcessors.putAll(processors)
 //            Collections.unmodifiableMap<kotlin.String?, Processor?>(LinkedHashMap<kotlin.String?, Processor?>(processors))
+
+        log.info("Building sources")
         lastSources = buildSources(effective["sources"])
-        lastProviders = buildProviders(effective.get("providers"))
+        log.info("Sources complete")
+
+        log.info("Loading providers")
+        lastProviders = buildProviders(effective["providers"])
+        log.info("Providers complete")
+
+        val elapsed = appStartTime.elapsedNow()
+        log.info("##### Pipeline processing complete: ${elapsed.inWholeMilliseconds} ms #####")
         return PipelineGraph(processors, connections, entryPoints)
     }
 
@@ -317,20 +338,22 @@ class ConfigLoader @JvmOverloads constructor(
      * 
      * <pre>
      * sources:
-     * infile:
-     * type: GetFile@1.0.0
-     * config:
-     * inputDir: /var/spool/zincflow
-     * pattern: "*.json"
-     * heartbeat:
-     * type: GenerateFlowFile
-     * config:
-     * content: "ping"
+     *   infile:
+     *     type: GetFile@1.0.0
+     *     config:
+     *       inputDir: /var/spool/zincflow
+     *       pattern: "*.json"
+     *   heartbeat:
+     *     type: GenerateFlowFile
+     *     config:
+     *       content: "ping"
     </pre> * 
      * 
      * A null source returned by a factory (e.g. GetFile without
      * inputDir) is treated as "disabled" — logged, not thrown. */
     private fun buildSources(sourcesRaw: Any?): MutableList<Source> {
+        log.info("Starting build sources")
+        log.info(sourcesRaw.toString())
         if (sourceRegistry == null) {
             log.warn("sources block present but no SourceRegistry wired — sources ignored")
             return mutableListOf()
@@ -338,9 +361,11 @@ class ConfigLoader @JvmOverloads constructor(
 
         if (sourcesRaw == null) return mutableListOf()
         require(sourcesRaw is Map<*, *>) { "config: 'sources' must be a map of name → {type, config}" }
+        log.info("Processing sources: ${sourcesRaw.entries.size}")
 
         val out: MutableList<Source> = mutableListOf()
         for (entry in sourcesRaw.entries) {
+            log.info("Source: ${entry.key}")
             val name: String = entry.key.toString()
             val sourceRoot = entry.value
             require(sourceRoot is Map<*, *>) { "config: sources: section for '$name' did not parse as Map" }
@@ -357,6 +382,7 @@ class ConfigLoader @JvmOverloads constructor(
             } else {
                 mutableMapOf()
             }
+            log.info("Source config: $sourceConfig")
 
             val source = sourceRegistry.create(typeRaw, name, sourceConfig)
             if (source == null) {
@@ -365,6 +391,7 @@ class ConfigLoader @JvmOverloads constructor(
             }
 
             out.add(source)
+            log.info("Done with source: $name")
         }
         return out.toMutableList()
     }

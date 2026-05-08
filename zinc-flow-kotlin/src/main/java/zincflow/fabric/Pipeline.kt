@@ -13,8 +13,11 @@ import java.util.ArrayDeque
 import java.util.Deque
 import java.util.Objects
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.collections.emptyList
 import kotlin.concurrent.Volatile
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 typealias ConnectionMap = MutableMap<String, Map<String, List<String>>>
 typealias RelationshipMap = MutableMap<String, List<String>>
@@ -25,6 +28,31 @@ typealias RelationshipMap = MutableMap<String, List<String>>
  * 
  * Matches the zinc-flow-csharp model — see
  * `zinc-flow-csharp/ZincFlow/Fabric/Fabric.cs`. */
+data class PipelineDirtyStatus(val isClean: Boolean, val mutationCounter: Int, val saveCounter: Int, val saveTick: Instant)
+object PipelineMetrics {
+    private val mutationCounter = AtomicInteger(0)
+    private val lastSaveCounter = AtomicInteger(0)
+    private var lastSaveTick = Clock.System.now()
+
+    fun updateTick() {
+        lastSaveTick = Clock.System.now()
+    }
+
+    fun recordMutation(): Int {
+        return mutationCounter.incrementAndGet()
+    }
+
+    fun recordSave(): Int {
+        lastSaveCounter.set(mutationCounter.get())
+        lastSaveTick = Clock.System.now()
+        return lastSaveCounter.get()
+    }
+
+    fun getDirtyStatus(): PipelineDirtyStatus {
+        return PipelineDirtyStatus(mutationCounter.get() > lastSaveCounter.get(), mutationCounter.get(), lastSaveCounter.get(), lastSaveTick)
+    }
+}
+
 class Pipeline @JvmOverloads constructor(
     @Volatile private var graph: PipelineGraph,
     private val maxHops: Int = DEFAULT_MAX_HOPS,
@@ -119,6 +147,7 @@ class Pipeline @JvmOverloads constructor(
         }
         graph = PipelineGraph(newProcessors, newConnections, g.entryPoints)
         recordProcessorDef(name, type, config, req)
+        PipelineMetrics.recordMutation()
         return true
     }
 
@@ -131,12 +160,14 @@ class Pipeline @JvmOverloads constructor(
         graph = PipelineGraph(newProcessors, newConnections, newEntries)
         processorStates.remove(name)
         processorDefs.remove(name)
+        PipelineMetrics.recordMutation()
         return true
     }
 
     fun enableProcessor(name: String): Boolean {
         if (!graph.processors.containsKey(name)) return false
         processorStates[name] = ComponentState.ENABLED
+        PipelineMetrics.recordMutation()
         return true
     }
 
@@ -168,6 +199,7 @@ class Pipeline @JvmOverloads constructor(
         val prior = processorDefs[name]
         val requires = prior?.requires ?: mutableListOf()
         recordProcessorDef(name, effectiveType, cfg, requires)
+        PipelineMetrics.recordMutation()
         return EditResult.success()
     }
 
@@ -210,6 +242,7 @@ class Pipeline @JvmOverloads constructor(
         newRelationships[relationship] = targets.toMutableList()
         newConnections[from] = newRelationships
         graph = PipelineGraph(g.processors, newConnections, g.entryPoints)
+        PipelineMetrics.recordMutation()
         return EditResult.success()
     }
 
@@ -233,6 +266,7 @@ class Pipeline @JvmOverloads constructor(
             newConnections[from] = newRelationships
         }
         graph = PipelineGraph(g.processors, newConnections, g.entryPoints)
+        PipelineMetrics.recordMutation()
         return EditResult.success()
     }
 
@@ -266,6 +300,7 @@ class Pipeline @JvmOverloads constructor(
             newConnections[from] = relationships.entries.associate { (rel: String, ts: List<String>) -> rel to ts.toMutableList() }
         }
         graph = PipelineGraph(g.processors, newConnections, g.entryPoints)
+        PipelineMetrics.recordMutation()
         return EditResult.success()
     }
 
@@ -286,6 +321,7 @@ class Pipeline @JvmOverloads constructor(
     fun disableProcessor(name: String): Boolean {
         if (!graph.processors.containsKey(name)) return false
         processorStates[name] = ComponentState.DISABLED
+        PipelineMetrics.recordMutation()
         return true
     }
 
@@ -333,6 +369,7 @@ class Pipeline @JvmOverloads constructor(
     fun addSource(source: Source) {
         sources[source.name()] = source
         stats.metrics().onSourceRegistered(source)
+        PipelineMetrics.recordMutation()
     }
 
     fun getSource(name: String): Source? {

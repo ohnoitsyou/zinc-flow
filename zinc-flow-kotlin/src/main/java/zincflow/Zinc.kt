@@ -147,7 +147,7 @@ object Zinc {
         val identity = NodeIdentity.resolve(
             effective,
             Path.of(NodeIdentity.NODE_ID_FILE),
-            Zinc::class.java.getPackage().implementationVersion //?: "1.0.0"
+            Zinc::class.java.getPackage().implementationVersion ?: "1.0.0"
         )
         identityRef.set(identity)
 
