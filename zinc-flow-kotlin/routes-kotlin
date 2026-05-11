@@ -14,7 +14,7 @@ GET /api/overlays
 GET /api/vc/status
 !! GET /api/flow/status
 !! GET /api/processors/{name}/samples
-++ GET /api/layout
+!! GET /api/layout
 GET /api/provenance/failures
 ?? GET /metrics
 ?? GET /api/plugins
@@ -42,7 +42,7 @@ POST /api/vc/commit
 POST /api/vc/push
 POST /api/flow/save
 ++ POST /api/expressions/parse
-++ POST /api/layout
+!! POST /api/layout
 POST /api/connections
 POST /api/processors/{name}/stats/reset
 ++ POST /api/sources/add

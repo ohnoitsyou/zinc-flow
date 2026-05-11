@@ -92,6 +92,10 @@ class Pipeline @JvmOverloads constructor(
         return registry
     }
 
+    fun getEdgeStats(): Map<String, Long> {
+        return edgeCounts.toMap()
+    }
+
     fun provenance(): ProvenanceProvider? {
         return context.getProviderAs(ProvenanceProvider.NAME, ProvenanceProvider::class.java)
     }
@@ -636,9 +640,10 @@ class Pipeline @JvmOverloads constructor(
     }
 
     private fun bumpEdge(from: String, rel: String, to: String) {
-        // "addOrUpdate"
-        edgeCounts.
-
+        val edgeKey = "$from|$rel|$to"
+        edgeCounts.compute(edgeKey) { _, value ->
+            (value ?: 0) + 1
+        }
     }
 
     private fun dispatchFailure(
@@ -670,6 +675,7 @@ class Pipeline @JvmOverloads constructor(
         }
         for (target in targets) {
             for (ff in ffs) {
+                bumpEdge(from, relationship, target)
                 stack.push(WorkItem(target, ff))
             }
         }

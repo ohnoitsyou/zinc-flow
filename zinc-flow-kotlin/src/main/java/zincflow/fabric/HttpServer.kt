@@ -17,6 +17,8 @@ import org.eclipse.jetty.util.thread.QueuedThreadPool
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import zincflow.core.FlowFile
+import zincflow.core.JsonMapper
+import zincflow.core.YamlMapper
 import zincflow.fabric.Pipeline.EditResult
 import zincflow.fabric.PluginLoader.loadFromDirectory
 import zincflow.providers.ProvenanceProvider
@@ -63,7 +65,8 @@ class HttpServer @JvmOverloads constructor(
     private var plugins: PluginLoader.Summary? = null,
     private val pluginsDir: Path? = null,
     private val identity: NodeIdentity? = null,
-    private val json: ObjectMapper = ObjectMapper(YAMLFactory.builder().configure(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION, true).build()).findAndRegisterModules()
+    private val json: ObjectMapper = JsonMapper.mapper,
+    private val yaml: ObjectMapper = YamlMapper.mapper,
 ) {
 //    private val plugins: PluginLoader.Summary
     private var app: Javalin? = null
@@ -102,6 +105,7 @@ class HttpServer @JvmOverloads constructor(
             .get("/api/connections") { handleConnections(it) }
             .get("/api/flow") { handleFlow(it) }
             .get("/api/flow/status") { handleFlowStatus(it) }
+            .get("/api/edge-stats") { handleEdgeStats(it) }
             .get("/api/registry") { handleRegistry(it) }
             .post("/api/reload") { handleReload(it) }
             .get("/api/providers") { handleProviders(it) }
@@ -120,6 +124,7 @@ class HttpServer @JvmOverloads constructor(
             .post("/api/processors/state") { handleProcessorState(it) }
             .get("/api/processors/{name}/samples") { handleProcessorSamples(it) }
             .get("/api/layout") { handleGetLayout(it) }
+            .post("/api/layout") { handlePostLayout(it) }
             .get("/api/sources") { handleSources(it) }
             .post("/api/sources/start") { handleStartSource(it) }
             .post("/api/sources/stop") { handleStopSource(it) }
@@ -392,6 +397,11 @@ class HttpServer @JvmOverloads constructor(
         }
 
         ctx.contentType("application/json").result(json.writeValueAsBytes(body))
+    }
+
+    @Throws(Exception::class)
+    private fun handleEdgeStats(ctx: Context) {
+        ctx.json(pipeline.getEdgeStats())
     }
 
     @Throws(Exception::class)
@@ -677,15 +687,32 @@ class HttpServer @JvmOverloads constructor(
         ))
     }
 
+    private fun findLayoutFilePath(): String {
+        return configPath?.absolute()?.resolveSibling("layout.yaml")?.toString() ?: ""
+    }
+
     @Throws(Exception::class)
     private fun handleGetLayout(ctx: Context) {
-        val path = configPath?.absolute()?.resolveSibling("layout.yaml")?.toString() ?: ""
+        val path = findLayoutFilePath()
         if (path.isEmpty() || !File(path).exists()) {
             ctx.json(mapOf("positions" to emptyMap<String, String>()))
         } else  {
-            val positions = json.readValue(File(path), Layout::class.java)
+            val positions = yaml.readValue(File(path), Layout::class.java)
             ctx.json(mapOf("positions" to positions.positions, "path" to path))
         }
+    }
+
+    @Throws(Exception::class)
+    private fun handlePostLayout(ctx: Context) {
+        val path = findLayoutFilePath()
+        if(path.isEmpty()) {
+            writeError(ctx, 500, "Config path not set - Cannot save layout")
+            return
+        }
+        val positions = ctx.bodyAsClass(Layout::class.java)
+        val posBytes = yaml.writeValueAsBytes(positions)
+        File(path).writeBytes(posBytes)
+        ctx.json(mapOf("status" to "saved", "path" to path, "bytes" to posBytes.size, "positions" to  positions.positions.size))
     }
 
     data class Layout(val positions: Map<String, LayoutXY>)
