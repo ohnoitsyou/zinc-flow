@@ -1,11 +1,13 @@
 package zincflow.fabric
 
 import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.core.StreamReadFeature
 import com.fasterxml.jackson.databind.DeserializationContext
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.javalin.Javalin
@@ -21,6 +23,7 @@ import zincflow.providers.ProvenanceProvider
 import zincflow.providers.ProvenanceProvider.EventType
 import zincflow.providers.SchemaRegistryProvider
 import zincflow.providers.VersionControlProvider
+import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -31,6 +34,7 @@ import java.util.concurrent.Executors
 import kotlin.collections.mapOf
 import kotlin.collections.mutableMapOf
 import kotlin.concurrent.Volatile
+import kotlin.io.path.absolute
 import kotlin.math.max
 
 /** HTTP surface for zinc-flow-java:
@@ -59,7 +63,7 @@ class HttpServer @JvmOverloads constructor(
     private var plugins: PluginLoader.Summary? = null,
     private val pluginsDir: Path? = null,
     private val identity: NodeIdentity? = null,
-    private val json: ObjectMapper = ObjectMapper()
+    private val json: ObjectMapper = ObjectMapper(YAMLFactory.builder().configure(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION, true).build()).findAndRegisterModules()
 ) {
 //    private val plugins: PluginLoader.Summary
     private var app: Javalin? = null
@@ -114,6 +118,8 @@ class HttpServer @JvmOverloads constructor(
             .post("/api/processors/enable") { handleEnableProcessor(it) }
             .post("/api/processors/disable") { handleDisableProcessor(it) }
             .post("/api/processors/state") { handleProcessorState(it) }
+            .get("/api/processors/{name}/samples") { handleProcessorSamples(it) }
+            .get("/api/layout") { handleGetLayout(it) }
             .get("/api/sources") { handleSources(it) }
             .post("/api/sources/start") { handleStartSource(it) }
             .post("/api/sources/stop") { handleStopSource(it) }
@@ -436,20 +442,15 @@ class HttpServer @JvmOverloads constructor(
                 "reloaded pipeline from {} — {} processors, entry points: {}, diff: {}",
                 configPath, fresh.processors.size, fresh.entryPoints, diff
             )
-            ctx.status(200)
-                .contentType("application/json")
-                .result(
-                    json.writeValueAsBytes(
-                        mapOf<String, Any>(
-                            "status" to "reloaded",
-                            "added" to diff.added,
-                            "removed" to diff.removed,
-                            "updated" to diff.updated,
-                            "connectionsChanged" to diff.connectionsChanged,
-                            "total" to diff.total()
-                        )
-                    )
+            ctx.json(mapOf<String, Any>(
+                    "status" to "reloaded",
+                    "added" to diff.added,
+                    "removed" to diff.removed,
+                    "updated" to diff.updated,
+                    "connectionsChanged" to diff.connectionsChanged,
+                    "total" to diff.total()
                 )
+            )
         } catch (ex: IOException) {
             log.error("reload failed: {}", ex.toString(), ex)
             writeError(ctx, 400, "reload failed: " + ex.message)
@@ -649,6 +650,46 @@ class HttpServer @JvmOverloads constructor(
             )
         )
     }
+
+    @Throws(Exception::class)
+    private fun handleProcessorSamples(ctx: Context) {
+        val name = ctx.pathParam("name")
+        if(name.isEmpty()) {
+            writeError(ctx, 400, "Name required")
+        }
+        val snapshot = SampleRegistry.getSnapshotFor(name)
+        val samples = snapshot.map {
+            mapOf(
+                "timestamp" to it.timestamp,
+                "flowfile" to "ff-${it.flowfileId}",
+                "contentType" to it.contentType,
+                "preview" to SampleRegistry.previewAsString(it.preview),
+                "previewBase64" to if(it.contentType == "records") null else kotlin.io.encoding.Base64.encode(it.preview),
+                "attributes" to it.attributes
+            )
+        }
+        ctx.contentType("application/json")
+            .result(json.writeValueAsString(mapOf(
+                "name" to name,
+                "sampling" to SampleRegistry.samplingEnabled,
+                "samples" to samples
+            )
+        ))
+    }
+
+    @Throws(Exception::class)
+    private fun handleGetLayout(ctx: Context) {
+        val path = configPath?.absolute()?.resolveSibling("layout.yaml")?.toString() ?: ""
+        if (path.isEmpty() || !File(path).exists()) {
+            ctx.json(mapOf("positions" to emptyMap<String, String>()))
+        } else  {
+            val positions = json.readValue(File(path), Layout::class.java)
+            ctx.json(mapOf("positions" to positions.positions, "path" to path))
+        }
+    }
+
+    data class Layout(val positions: Map<String, LayoutXY>)
+    data class LayoutXY(val x: Double, val y: Double)
 
     // --- Sources ---
     @Throws(Exception::class)

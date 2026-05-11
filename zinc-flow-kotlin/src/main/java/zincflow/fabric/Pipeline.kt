@@ -78,6 +78,8 @@ class Pipeline @JvmOverloads constructor(
     private val processorDefs = ConcurrentHashMap<String, ProcessorDef>()
     private val sources = ConcurrentHashMap<String, Source>()
 
+    private val edgeCounts = ConcurrentHashMap<String, Long>()
+
     fun metrics(): Metrics {
         return stats.metrics()
     }
@@ -531,6 +533,7 @@ class Pipeline @JvmOverloads constructor(
         }
     }
 
+    // I think this might be the ExecuteGraph function from c-sharp
     private fun drain(g: PipelineGraph, stack: Deque<WorkItem>) {
         val prov = provenanceOrNoop()
         while (!stack.isEmpty()) {
@@ -574,9 +577,8 @@ class Pipeline @JvmOverloads constructor(
                 continue
             }
 
-            val result: ProcessorResult
-            try {
-                result = processor.process(input)
+            val result = try {
+                processor.process(input)
             } catch (ex: RuntimeException) {
                 log.error(
                     "processor '{}' threw while handling {}: {}",
@@ -606,15 +608,23 @@ class Pipeline @JvmOverloads constructor(
         result: ProcessorResult
     ) {
         when (result) {
-            is ProcessorResult.Single -> fanOut(graph, stack, from, Relationships.SUCCESS, listOf(result.flowFile.bumpHop()))
+            is ProcessorResult.Single -> {
+                SampleRegistry.pushSample(from, result.flowFile)
+                fanOut(graph, stack, from, Relationships.SUCCESS, listOf(result.flowFile.bumpHop()))
+            }
             is ProcessorResult.Multiple -> {
+                SampleRegistry.pushSample(from, result.flowFiles.first())
                 for (out in result.flowFiles) {
                     fanOut(graph, stack, from, Relationships.SUCCESS, listOf(out.bumpHop()))
                 }
             }
 
-            is ProcessorResult.Routed -> fanOut(graph, stack, from, result.route, listOf(result.flowFile.bumpHop()))
+            is ProcessorResult.Routed -> {
+                SampleRegistry.pushSample(from, result.flowFile)
+                fanOut(graph, stack, from, result.route, listOf(result.flowFile.bumpHop()))
+            }
             is ProcessorResult.MultiRouted -> {
+                SampleRegistry.pushSample(from, result.outputs.first().flowFile)
                 for (entry in result.outputs) {
                     fanOut(graph, stack, from, entry.route, listOf(entry.flowFile.bumpHop()))
                 }
@@ -623,6 +633,12 @@ class Pipeline @JvmOverloads constructor(
             is ProcessorResult.Dropped -> stats.recordDropped()
             is ProcessorResult.Failure -> dispatchFailure(graph, stack, from, result.flowFile, result.reason)
         }
+    }
+
+    private fun bumpEdge(from: String, rel: String, to: String) {
+        // "addOrUpdate"
+        edgeCounts.
+
     }
 
     private fun dispatchFailure(

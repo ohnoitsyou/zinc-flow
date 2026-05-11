@@ -12,8 +12,8 @@ GET /api/provenance/{id}
 GET /api/sources
 GET /api/overlays
 GET /api/vc/status
-++ GET /api/flow/status
-++ GET /api/processors/{name}/samples
+!! GET /api/flow/status
+!! GET /api/processors/{name}/samples
 ++ GET /api/layout
 GET /api/provenance/failures
 ?? GET /metrics
