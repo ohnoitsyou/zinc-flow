@@ -184,6 +184,6 @@ final class HttpServerAdminTest {
         boot();
         var resp = postJson("/api/processors/enable", "{}");
         assertEquals(400, resp.statusCode());
-        assertTrue(resp.body().contains("name required"));
+        assertTrue(resp.body().toLowerCase().contains("name required"));
     }
 }

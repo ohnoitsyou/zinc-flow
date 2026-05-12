@@ -5,8 +5,12 @@ import zincflow.core.FlowFileAttributes
 import zincflow.core.PollingSource
 import zincflow.core.Source
 import zincflow.core.SourcePlugin
+import zincflow.toIntOrDefault
+import zincflow.toLongOrDefault
+import zincflow.toStringOrDefault
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicLong
+
 
 /** Timer-driven generator. Emits `batchSize` identical FlowFiles
  * every `pollIntervalMillis`. Handy for load testing, soak
@@ -39,7 +43,6 @@ class GenerateFlowFile @JvmOverloads constructor(
     contentType: String?,
     attributesAsString: String = "",
     batchSize: Int = 1,
-    override val isRunning: Boolean = false
 ) : PollingSource(name, pollIntervalMillis) {
     private val content: ByteArray = (content ?: "").toByteArray(StandardCharsets.UTF_8)
     private val baseAttributes: Map<String, String> = buildAttributes(name, contentType ?: "", attributesAsString)
@@ -71,35 +74,20 @@ class GenerateFlowFile @JvmOverloads constructor(
             mutableListOf("content", "contentType", "attributes", "batchSize", "pollIntervalMs")
 
         override fun create(name: String, config: Map<String, Any>): Source? {
-            val content = str(config["content"])
+            val content = config["content"] as? String ?: ""
             if (content.isEmpty()) return null // disabled when content is absent
 
             return GenerateFlowFile(
                 name,
-                longOr(config["pollIntervalMs"], 1000),
+                config["pollIntervalMs"].toLongOrDefault(1000L),
                 content,
-                str(config["contentType"]),
-                str(config["attributes"]),
-                longOr(config["batchSize"], 1).toInt()
+                config["contentType"].toStringOrDefault(""),
+                config["attributes"].toStringOrDefault(""),
+                config["batchSize"].toIntOrDefault(1),
             )
         }
-
-        companion object {
-            private fun str(o: Any?): String {
-                return o?.toString() ?: ""
-            }
-
-            private fun longOr(o: Any?, fallback: Long): Long {
-                if (o == null) return fallback
-                if (o is Number) return o.toLong()
-                return try {
-                    o.toString().trim().toLong()
-                } catch (_: NumberFormatException) {
-                    fallback
-                }
-            }
-        }
     }
+
 
     companion object {
         const val NAME: String = "generate"

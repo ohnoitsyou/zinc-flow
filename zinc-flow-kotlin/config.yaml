@@ -48,3 +48,5 @@ flow:
     LogAttribute:
       success:
       - sink
+sources: [
+  ]

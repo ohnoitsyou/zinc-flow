@@ -31,8 +31,10 @@ abstract class PollingSource protected constructor(private val name: String, pol
     // and surprise any operator who typo'd a config value.
     private val pollIntervalMillis: Long = pollIntervalMillis.takeIf { it > 0 } ?: 1000
 
-    @Volatile
-    protected var running = false
+//    @Volatile
+//    protected var running = false
+
+    override var isRunning: Boolean = false
 
     @Volatile
     private var loop: Thread? = null
@@ -65,27 +67,27 @@ abstract class PollingSource protected constructor(private val name: String, pol
 
     @Synchronized
     override fun start(ingest: (FlowFile) -> Boolean) {
-        if (running) return
-        running = true
+        if (isRunning) return
+        isRunning = true
         loop = Thread.ofVirtual().name("zinc-flow-source-$name").start { runLoop(ingest) }
         log.info("source $name started (${sourceType()} type, poll=${pollIntervalMillis}ms)")
     }
 
     @Synchronized
     override fun stop() {
-        if (!running) return
-        running = false
+        if (!isRunning) return
+        isRunning = false
         loop?.interrupt() ?: return
         loop = null
         log.info("source $name stopped")
     }
 
     private fun runLoop(ingest: (FlowFile) -> Boolean) {
-        while (running && !Thread.currentThread().isInterrupted) {
+        while (isRunning && !Thread.currentThread().isInterrupted) {
             try {
                 val batch = poll()
                 for (ff in batch) {
-                    if (!running) return
+                    if (!isRunning) return
                     val accepted: Boolean = try {
                         ingest(ff)
                     } catch (ex: RuntimeException) {

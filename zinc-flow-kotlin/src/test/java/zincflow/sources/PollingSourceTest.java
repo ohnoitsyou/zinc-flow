@@ -22,7 +22,7 @@ final class PollingSourceTest {
         List<Long> ingestedIds = new CopyOnWriteArrayList<>();
 
         PollingSource source = new PollingSource("probe", 10) {
-            @Override public boolean isRunning() { return getRunning(); }
+            @Override public boolean isRunning() { return super.isRunning(); }
             @Override public String sourceType() { return "probe"; }
             @Override protected List<FlowFile> poll() {
                 pollCount.incrementAndGet();
@@ -54,7 +54,7 @@ final class PollingSourceTest {
         CountDownLatch rejected = new CountDownLatch(1);
         PollingSource source = new PollingSource("probe", 10) {
 
-            @Override public boolean isRunning() { return getRunning(); }
+            @Override public boolean isRunning() { return super.isRunning(); }
             @Override public String sourceType() { return "probe"; }
             @Override protected List<FlowFile> poll() {
                 return List.of(FlowFile.Companion.create(new byte[0], Map.of()));
@@ -69,7 +69,7 @@ final class PollingSourceTest {
     @Test
     void nonPositivePollIntervalFallsBackToDefault() {
         PollingSource source = new PollingSource("probe", 0) {
-            @Override public boolean isRunning() { return getRunning(); }
+            @Override public boolean isRunning() { return super.isRunning(); }
             @Override public String sourceType() { return "probe"; }
             @Override protected List<FlowFile> poll() { return List.of(); }
         };
@@ -79,7 +79,7 @@ final class PollingSourceTest {
     @Test
     void doubleStartIsIdempotent() {
         PollingSource source = new PollingSource("probe", 50) {
-            @Override public boolean isRunning() { return getRunning(); }
+            @Override public boolean isRunning() { return super.isRunning(); }
             @Override public String sourceType() { return "probe"; }
             @Override protected List<FlowFile> poll() { return List.of(); }
         };

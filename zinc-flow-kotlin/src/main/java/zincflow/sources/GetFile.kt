@@ -37,13 +37,12 @@ import java.nio.file.StandardCopyOption
 </pre> * 
  * 
  * Mirrors zinc-flow-csharp's GetFile. */
-class GetFile @JvmOverloads constructor(
+class GetFile(
     name: String,
     val inputDir: Path,
     pattern: String?,
     pollIntervalMillis: Long,
     val unpackV3: Boolean,
-    override val isRunning: Boolean = false
 ) : PollingSource(name, pollIntervalMillis) {
     private val pattern: String = if (pattern.isNullOrEmpty()) "*" else pattern
     val processedDir: Path = inputDir.resolve(PROCESSED_DIR)
@@ -199,8 +198,7 @@ class GetFile @JvmOverloads constructor(
                 Path.of(inputDir),
                 config.getOrDefault("pattern", "*").toString(),
                 config["pollIntervalMs"] as? Long ?: 1000,
-                config["unpackV3"] as? Boolean ?: true,
-                false
+                config["unpackV3"] as? Boolean ?: true
             )
         }
     }
