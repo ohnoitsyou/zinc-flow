@@ -20,25 +20,25 @@ final class ProcessorTypesHttpTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private HttpServer server;
-    private Registry registry;
+    private ProcessorRegistry processorRegistry;
     private final HttpClient http = HttpClient.newHttpClient();
 
     @BeforeEach
     void boot() {
-        registry = new Registry();
-        registry.register(new Registry.TypeInfo(
+        processorRegistry = new ProcessorRegistry();
+        processorRegistry.register(new ProcessorRegistry.TypeInfo(
                 "Toy", "1.0.0", "A sample processor",
                 java.util.List.of("key", "value"),
                 java.util.List.of("success", "failure")),
-                (cfg, ctx) -> ff -> new ProcessorResult.Dropped() );
-        registry.register(new Registry.TypeInfo(
+                (_, _) -> ff -> new ProcessorResult.Dropped() );
+        processorRegistry.register(new ProcessorRegistry.TypeInfo(
                 "Toy", "2.0.0", "Revised sample processor",
                 java.util.List.of("key", "value", "mode"),
                 java.util.List.of("success", "failure", "skipped")),
-                (cfg, ctx) -> ff -> new ProcessorResult.Dropped());
+                (_, _) -> ff -> new ProcessorResult.Dropped());
 
         var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null,
-                new ProcessorContext(), registry);
+                new ProcessorContext(), processorRegistry);
         server = new HttpServer(pipeline).start(0);
     }
 

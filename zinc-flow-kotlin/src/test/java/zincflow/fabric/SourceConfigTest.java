@@ -15,7 +15,7 @@ final class SourceConfigTest {
 
     @Test
     void parsesTypedSourcesFromConfig() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var sources = new SourceRegistry();
         PluginLoader.loadSources(getClass().getClassLoader(), sources);
         assertTrue(sources.has("GenerateFlowFile"), "built-in source must register via ServiceLoader");
@@ -43,7 +43,7 @@ final class SourceConfigTest {
 
     @Test
     void unknownTypeThrowsNotIgnored() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var sources = new SourceRegistry();
         PluginLoader.loadSources(getClass().getClassLoader(), sources);
 
@@ -63,7 +63,7 @@ final class SourceConfigTest {
 
     @Test
     void factoryReturningNullIsTreatedAsDisabled() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var sources = new SourceRegistry();
         PluginLoader.loadSources(getClass().getClassLoader(), sources);
 

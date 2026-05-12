@@ -25,7 +25,7 @@ final class FlowSaveHttpTest {
     void teardown() { if (server != null) server.stop(); }
 
     private HttpServer boot(Path base) throws Exception {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var loader = new ConfigLoader(registry);
         var graph = loader.loadFromFile(base);
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, null, loader.context(), registry);
@@ -63,7 +63,7 @@ final class FlowSaveHttpTest {
 
         // File on disk parses back to the same graph shape.
         String written = Files.readString(base);
-        var reloaded = new ConfigLoader(new Registry()).load(written);
+        var reloaded = new ConfigLoader(new ProcessorRegistry()).load(written);
         assertTrue(reloaded.getProcessors().containsKey("ingress"));
         assertEquals(java.util.List.of("ingress"), reloaded.getEntryPoints());
     }

@@ -15,7 +15,7 @@ final class ProviderConfigTest {
 
     @Test
     void parsesTypedProvidersFromConfig() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var providers = new ProviderRegistry();
         PluginLoader.loadProviders(getClass().getClassLoader(), providers);
         assertTrue(providers.has(LoggingProvider.TYPE),
@@ -44,7 +44,7 @@ final class ProviderConfigTest {
 
     @Test
     void missingProvidersBlockYieldsEmptyList() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var providers = new ProviderRegistry();
         PluginLoader.loadProviders(getClass().getClassLoader(), providers);
         var loader = new ConfigLoader(registry, null, null, providers);
@@ -60,7 +60,7 @@ final class ProviderConfigTest {
 
     @Test
     void unknownProviderTypeThrows() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var providers = new ProviderRegistry();
         PluginLoader.loadProviders(getClass().getClassLoader(), providers);
         var loader = new ConfigLoader(registry, null, null, providers);

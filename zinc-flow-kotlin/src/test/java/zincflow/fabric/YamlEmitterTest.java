@@ -28,12 +28,12 @@ final class YamlEmitterTest {
 
     @Test
     void roundTripPreservesGraphShape() {
-        var loader = new ConfigLoader(new Registry());
+        var loader = new ConfigLoader(new ProcessorRegistry());
         var graph = loader.load(DEMO_YAML);
         String emitted = YamlEmitter.emit(graph, loader.lastSpecs());
 
         // Parse it back and confirm structure matches.
-        var loader2 = new ConfigLoader(new Registry());
+        var loader2 = new ConfigLoader(new ProcessorRegistry());
         var reparsed = loader2.load(emitted);
         assertEquals(graph.getProcessors().keySet(), reparsed.getProcessors().keySet());
         assertEquals(graph.getEntryPoints(), reparsed.getEntryPoints());
@@ -48,7 +48,7 @@ final class YamlEmitterTest {
 
     @Test
     void doubleRoundTripIsStable() {
-        var loader = new ConfigLoader(new Registry());
+        var loader = new ConfigLoader(new ProcessorRegistry());
         loader.load(DEMO_YAML);
         String first = YamlEmitter.emit(loader.load(DEMO_YAML), loader.lastSpecs());
         String second = YamlEmitter.emit(loader.load(first), loader.lastSpecs());
@@ -58,7 +58,7 @@ final class YamlEmitterTest {
 
     @Test
     void processorWithEmptyConfigOmitsConfigKey() {
-        var loader = new ConfigLoader(new Registry());
+        var loader = new ConfigLoader(new ProcessorRegistry());
         var graph = loader.load("""
                 flow:
                   entryPoints: [p]
@@ -75,7 +75,7 @@ final class YamlEmitterTest {
 
     @Test
     void connectionsSectionOmittedWhenEmpty() {
-        var loader = new ConfigLoader(new Registry());
+        var loader = new ConfigLoader(new ProcessorRegistry());
         var graph = loader.load("""
                 flow:
                   entryPoints: [p]
@@ -91,7 +91,7 @@ final class YamlEmitterTest {
     @Test
     void specOrderingFollowsGraphInsertionOrder() {
         // Graph uses LinkedHashMap so insertion order is meaningful.
-        var loader = new ConfigLoader(new Registry());
+        var loader = new ConfigLoader(new ProcessorRegistry());
         var graph = loader.load("""
                 flow:
                   entryPoints: [a]

@@ -12,7 +12,7 @@ import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-final class SourceRegistryTest {
+final class SourceProcessorRegistryTest {
 
     @Test
     void registerAndCreateByBareType() {

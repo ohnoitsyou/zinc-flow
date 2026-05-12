@@ -15,7 +15,7 @@ import java.util.ServiceLoader
 
 /** Discovers [ProcessorPlugin] and [ProviderPlugin]
  * services on a given [ClassLoader] and wires them into a
- * [Registry] + [ProcessorContext]. Providers load first
+ * [ProcessorRegistry] + [ProcessorContext]. Providers load first
  * so processor plugins built on top of them find the dependency in
  * the context.
  * 
@@ -44,11 +44,11 @@ object PluginLoader {
     @JvmStatic
     @JvmOverloads
     fun load(
-        cl: ClassLoader, registry: Registry, context: ProcessorContext,
+        cl: ClassLoader, processorRegistry: ProcessorRegistry, context: ProcessorContext,
         sourceRegistry: SourceRegistry? = null
     ): Summary {
         val providers = loadProvidersLegacy(cl, context)
-        val processors = loadProcessors(cl, registry)
+        val processors = loadProcessors(cl, processorRegistry)
         val sources = if (sourceRegistry == null) listOf() else loadSources(cl, sourceRegistry)
         return Summary(processors, providers, sources, null, listOf(), null)
     }
@@ -60,7 +60,7 @@ object PluginLoader {
     @JvmStatic
     @JvmOverloads
     fun loadFromDirectory(
-        dir: Path?, registry: Registry, context: ProcessorContext,
+        dir: Path?, processorRegistry: ProcessorRegistry, context: ProcessorContext,
         sourceRegistry: SourceRegistry? = null
     ): Summary {
         if (dir == null || !Files.isDirectory(dir)) {
@@ -91,7 +91,7 @@ object PluginLoader {
         }
         val cl = URLClassLoader(urls.toTypedArray(), PluginLoader::class.java.classLoader)
         val providers = loadProvidersLegacy(cl, context)
-        val processors = loadProcessors(cl, registry)
+        val processors = loadProcessors(cl, processorRegistry)
         val sources = if (sourceRegistry == null) listOf() else loadSources(cl, sourceRegistry)
         log.info(
             "loaded {} plugin(s) from {} — providers: {}, processors: {}, sources: {}",
@@ -148,7 +148,7 @@ object PluginLoader {
         return names.sorted()
     }
 
-    private fun loadProcessors(cl: ClassLoader, registry: Registry): List<String> {
+    private fun loadProcessors(cl: ClassLoader, processorRegistry: ProcessorRegistry): List<String> {
         val types = mutableListOf<String>()
         for (plugin in ServiceLoader.load(ProcessorPlugin::class.java, cl)) {
             val type = plugin.type()
@@ -157,13 +157,13 @@ object PluginLoader {
                 continue
             }
             val version = plugin.version().ifEmpty { TypeRefs.DEFAULT_VERSION }
-            val info = Registry.TypeInfo(
+            val info = ProcessorRegistry.TypeInfo(
                 type, version,
                 plugin.description(),
                 plugin.configKeys(),
                 plugin.relationships()
             )
-            registry.register(info) { config: Map<String, String>, context: ProcessorContext ->
+            processorRegistry.register(info) { config: Map<String, String>, context: ProcessorContext ->
                 plugin.create(config, context)
             }
             types.add("$type@$version")

@@ -32,6 +32,7 @@ import zincflow.processors.UpdateAttribute
 import zincflow.processors.UpdateRecord
 import zincflow.providers.ContentProvider
 import zincflow.providers.LoggingProvider
+import zincflow.toIntOrDefault
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.Boolean
@@ -55,7 +56,7 @@ import kotlin.String
  * {@value #DEFAULT_VERSION}.
  * 
  * Stateless; one instance shared by the Fabric. */
-class Registry {
+class ProcessorRegistry {
     /** A factory for a processor given its config map and the surrounding
      * processor context. The context is never null — callers that don't
      * care can pass `new ProcessorContext()` and ignore it inside
@@ -71,10 +72,10 @@ class Registry {
     class TypeInfo @JvmOverloads constructor(
         val name: String,
         val version: String,
-        val description: String?,
+        val description: String,
         val configKeys: List<String> = listOf(),
         val relationships: List<String> = listOf(),
-        val category: String? = "Other",
+        val category: String = "Other",
         val parameters: List<ParamInfo> = configKeys.map { k: String -> ParamInfo.of(k).build() }
     ) {
         fun qualifiedName(): String {
@@ -135,11 +136,11 @@ class Registry {
     fun create(
         type: String,
         config: Map<String, String>,
-        ctx: ProcessorContext? = ProcessorContext()
+        ctx: ProcessorContext = ProcessorContext()
     ): Processor? {
         val key = resolveKey(type) ?: throw IllegalArgumentException("$type is not defined")
         val f: Factory = versioned[key]!!
-        return f.create(config, ctx ?: ProcessorContext())
+        return f.create(config, ctx)
     }
 
     /** All registered unqualified type names (latest only per name). */
@@ -176,7 +177,7 @@ class Registry {
     private fun registerTyped(
         name: String,
         description: String,
-        category: String?,
+        category: String,
         params: List<ParamInfo> = listOf(),
         relationships: List<String> = listOf(),
         factory: Factory
@@ -187,12 +188,11 @@ class Registry {
 
     private fun registerBuiltins() {
         // --- Attribute ---
-        registerTyped(
-            "LogAttribute", "Logs FlowFile attributes and passes through", "Attribute",
+        registerTyped("LogAttribute", "Logs FlowFile attributes and passes through", "Attribute",
             listOf(ParamInfo.of("prefix").description("Log line prefix").defaultValue("").build()),
             listOf("success")
-        ) { cfg: Map<String, String>, ctx: ProcessorContext? ->
-            LogAttribute(cfg.getOrDefault("prefix", "" ), loggerFrom(ctx ?: ProcessorContext()))
+        ) { cfg: Map<String, String>, ctx: ProcessorContext ->
+            LogAttribute(cfg.getOrDefault("prefix", "" ), loggerFrom(ctx))
         }
 
         registerTyped("UpdateAttribute", "Sets key=value attribute on FlowFiles", "Attribute",
@@ -201,7 +201,7 @@ class Registry {
                 ParamInfo.of("value").required().placeholder("prod").build()
             ),
             listOf("success"),
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             UpdateAttribute(required(cfg, "key"), cfg.getOrDefault("value", "") )
         }
 
@@ -213,7 +213,7 @@ class Registry {
                     .build()
             ),
             listOf("unmatched")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             RouteOnAttribute(cfg.getOrDefault("routes", ""))
         }
 
@@ -227,7 +227,7 @@ class Registry {
                     .description("attribute names to remove or keep").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             FilterAttribute(
                 cfg.getOrDefault("mode", "remove"),
                 cfg.getOrDefault("attributes", "")
@@ -242,10 +242,10 @@ class Registry {
                     .choices("raw", "v3").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, ctx: ProcessorContext ->
             PutStdout(cfg.getOrDefault("prefix", ""),
                 cfg.getOrDefault("format", "raw"),
-                storeFrom(ctx!!)
+                storeFrom(ctx)
             )
         }
 
@@ -257,17 +257,16 @@ class Registry {
                     .choices("raw", "v3").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, ctx: ProcessorContext ->
             PutFile(
                 required(cfg, "directory"),
                 cfg.getOrDefault("append", "false").toBoolean(),
                 cfg.getOrDefault("format", "raw"),
-                storeFrom(ctx!!)
+                storeFrom(ctx)
             )
         }
 
-        registerTyped(
-            "PutHTTP", "POST FlowFile to downstream HTTP endpoint", "Sink",
+        registerTyped("PutHTTP", "POST FlowFile to downstream HTTP endpoint", "Sink",
             listOf(
                 ParamInfo.of("endpoint").required().placeholder("http://localhost:8080/ingest").build(),
                 ParamInfo.of("method").kind(ParamKind.ENUM).defaultValue("POST")
@@ -278,14 +277,14 @@ class Registry {
                     .choices("raw", "v3").build()
             ),
             listOf("success", "failure")
-        ) { cfg: Map<String, String>, ctx: ProcessorContext? ->
+        ) { cfg: Map<String, String>, ctx: ProcessorContext ->
             PutHTTP(
                 required(cfg, "endpoint"),
                 cfg.getOrDefault("method", "POST"),
                 Duration.ofSeconds(cfg.getOrDefault("timeoutSeconds", "30").toLong()),
                 cfg.getOrDefault("contentType", "application/octet-stream"),
                 cfg.getOrDefault("format", "raw"),
-                storeFrom(ctx!!)
+                storeFrom(ctx)
             )
         }
 
@@ -293,15 +292,15 @@ class Registry {
         registerTyped("PackageFlowFileV3", "Wrap (attributes + content) into NiFi V3 binary content", "V3",
             listOf(),
             listOf("success")
-        ) { _: Map<String, String>, ctx: ProcessorContext? ->
-            PackageFlowFileV3(storeFrom(ctx!!))
+        ) { _: Map<String, String>, ctx: ProcessorContext ->
+            PackageFlowFileV3(storeFrom(ctx))
         }
 
         registerTyped("UnpackageFlowFileV3", "Decode V3 binary content into one or more FlowFiles", "V3",
             listOf(),
             listOf("success")
-        ) { _: Map<String, String>, ctx: ProcessorContext? ->
-            UnpackageFlowFileV3(storeFrom(ctx!!))
+        ) { _: Map<String, String>, ctx: ProcessorContext ->
+            UnpackageFlowFileV3(storeFrom(ctx))
         }
 
         // --- Text ---
@@ -313,7 +312,7 @@ class Registry {
                     .choices("all", "first").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             ReplaceText(
                 required(cfg, "pattern"),
                 cfg.getOrDefault("replacement", ""),
@@ -321,37 +320,35 @@ class Registry {
             )
         }
 
-        registerTyped(
-            "SplitText", "Split content by delimiter into multiple FlowFiles", "Text",
+        registerTyped("SplitText", "Split content by delimiter into multiple FlowFiles", "Text",
             listOf(
                 ParamInfo.of("delimiter").required().placeholder("\\n\\n").build(),
                 ParamInfo.of("headerLines").kind(ParamKind.INTEGER).defaultValue("0").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             SplitText(
                 required(cfg, "delimiter"),
-                parseInt(cfg.getOrDefault("headerLines", "0"), 0)
+                cfg.getOrDefault("headerLines", "0").toIntOrDefault(0)
             )
         }
 
-        registerTyped(
-            "ExtractText", "Regex capture groups → attributes", "Text",
+        registerTyped("ExtractText", "Regex capture groups → attributes", "Text",
             listOf(
                 ParamInfo.of("pattern").required().placeholder("(?<user>\\w+)@(?<host>\\w+)").build(),
                 ParamInfo.of("groupNames").placeholder("user,host")
                     .description("comma-separated names for positional groups").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, ctx: ProcessorContext? ->
-            ExtractText(required(cfg, "pattern"), cfg.getOrDefault("groupNames", ""), storeFrom(ctx!!))
+        ) { cfg: Map<String, String>, ctx: ProcessorContext ->
+            ExtractText(required(cfg, "pattern"), cfg.getOrDefault("groupNames", ""), storeFrom(ctx))
         }
 
         // --- Conversion ---
         registerTyped("ConvertJSONToRecord", "Parses JSON content into records", "Conversion",
             listOf(ParamInfo.of("schemaName").defaultValue("").build()),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             ConvertJSONToRecord(cfg.getOrDefault("schemaName", ""))
         }
 
@@ -360,7 +357,7 @@ class Registry {
                 ParamInfo.of("singleObject").kind(ParamKind.BOOLEAN).defaultValue("false").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             ConvertRecordToJSON(cfg.getOrDefault("singleObject", "false").toBoolean())
         }
 
@@ -372,7 +369,7 @@ class Registry {
                 ParamInfo.of("fields").placeholder("id:long,name:string").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             ConvertCSVToRecord(
                 cfg.getOrDefault("schemaName", ""),
                 cfg.getOrDefault("delimiter", ",").first(),
@@ -387,7 +384,7 @@ class Registry {
                 ParamInfo.of("includeHeader").kind(ParamKind.BOOLEAN).defaultValue("true").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             ConvertRecordToCSV(
                 cfg.getOrDefault("delimiter", ",").first(),
                 !cfg.getOrDefault("includeHeader", "true").toBoolean()
@@ -401,7 +398,7 @@ class Registry {
                     .description("comma-separated name:type pairs").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             ConvertAvroToRecord(
                 cfg.getOrDefault("schemaName", ""),
                 cfg.getOrDefault("fields", "")
@@ -411,14 +408,14 @@ class Registry {
         registerTyped("ConvertRecordToAvro", "Encode records to Avro binary", "Conversion",
             listOf(),
             listOf("success")
-        ) { _: Map<String, String>, _: ProcessorContext? ->
+        ) { _: Map<String, String>, _: ProcessorContext ->
             ConvertRecordToAvro()
         }
 
         registerTyped("ConvertOCFToRecord", "Decode Avro OCF (.avro file) into records", "Conversion",
             listOf(),
             listOf("success")
-        ) { _: Map<String, String>, _: ProcessorContext? ->
+        ) { _: Map<String, String>, _: ProcessorContext ->
             ConvertOCFToRecord()
         }
 
@@ -428,7 +425,7 @@ class Registry {
                     .choices("null", "deflate", "snappy", "bzip2", "xz", "zstandard").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             ConvertRecordToOCF(cfg.getOrDefault("codec", "null"))
         }
 
@@ -441,7 +438,7 @@ class Registry {
                     .description("attr=expression pairs").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             EvaluateExpression(parseTransforms(required(cfg, "expressions")))
         }
 
@@ -452,7 +449,7 @@ class Registry {
                     .description("semicolon-delimited op:arg1[:arg2] directives").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             TransformRecord(required(cfg, "operations"))
         }
 
@@ -464,7 +461,7 @@ class Registry {
                     .description("field=expression pairs; later pairs see earlier writes").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             UpdateRecord(cfg.getOrDefault("updates", ""))
         }
 
@@ -478,10 +475,10 @@ class Registry {
                 ParamInfo.of("recordIndex").kind(ParamKind.INTEGER).defaultValue("0").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             ExtractRecordField(
                 required(cfg, "fields"),
-                parseInt(cfg.getOrDefault("recordIndex", "0"), 0)
+                cfg.getOrDefault("recordIndex", "0").toIntOrDefault(0)
             )
         }
 
@@ -492,14 +489,14 @@ class Registry {
                     .description("JsonPath filter against the record batch").build()
             ),
             listOf("success")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             QueryRecord(required(cfg, "query"))
         }
 
         registerTyped("SplitRecord", "Fan out a RecordContent FlowFile into one FlowFile per record", "Record",
             listOf(),
             listOf("success")
-        ) { _: Map<String, String>, _: ProcessorContext? ->
+        ) { _: Map<String, String>, _: ProcessorContext ->
             SplitRecord()
         }
 
@@ -513,7 +510,7 @@ class Registry {
                     .build()
             ),
             listOf("unmatched")
-        ) { cfg: Map<String, String>, _: ProcessorContext? ->
+        ) { cfg: Map<String, String>, _: ProcessorContext ->
             RouteRecord(cfg.getOrDefault("routes", ""))
         }
     }
@@ -558,15 +555,6 @@ class Registry {
                         it.first() to it.last()
                     }
             }.toMap()
-        }
-
-        private fun parseInt(s: String?, fallback: Int): Int {
-            if (s.isNullOrBlank()) return fallback
-            return try {
-                Integer.parseInt(s.trim())
-            } catch (_: NumberFormatException) {
-                fallback
-            }
         }
 
         private fun required(cfg: Map<String, String>, key: String?): String {

@@ -66,7 +66,7 @@ final class VcHttpTest {
         var vc = new VersionControlProvider(dir, null, null, "main");
         vc.enable();
         ctx.addProvider(vc);
-        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, ctx, new Registry());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, ctx, new ProcessorRegistry());
         server = new HttpServer(pipeline).start(0);
         var resp = post("/api/vc/commit", "{}");
         assertEquals(400, resp.statusCode());
@@ -82,7 +82,7 @@ final class VcHttpTest {
         var vc = new VersionControlProvider(dir, null, null, "main");
         vc.enable();
         ctx.addProvider(vc);
-        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, ctx, new Registry());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, ctx, new ProcessorRegistry());
         server = new HttpServer(pipeline).start(0);
 
         var statusResp = get("/api/vc/status");

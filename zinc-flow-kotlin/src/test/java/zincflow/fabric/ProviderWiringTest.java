@@ -18,7 +18,6 @@ import zincflow.providers.ProvenanceProvider;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,7 +38,7 @@ final class ProviderWiringTest {
         context.addProvider(prov);
 
         Processor noop = ProcessorResult.Single.Companion::invoke;
-        var pipeline = new Pipeline(singleNoop(noop), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
+        var pipeline = new Pipeline(singleNoop(noop), Pipeline.DEFAULT_MAX_HOPS, null, context, new ProcessorRegistry());
         pipeline.ingest(FlowFile.Companion.create(new byte[0], Map.of()));
 
         assertEquals(1, prov.size());
@@ -85,7 +84,7 @@ final class ProviderWiringTest {
 
         Processor logger = ProcessorResult.Single.Companion::invoke;
         var graph = new PipelineGraph(Map.of("logger", logger), Map.of(), List.of("logger"), List.of());
-        var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
+        var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, null, context, new ProcessorRegistry());
 
         assertTrue(pipeline.disableProvider("logging"));
         assertEquals(ComponentState.DISABLED, pipeline.processorState("logger"),
@@ -98,7 +97,7 @@ final class ProviderWiringTest {
 
     @Test
     void addProcessorUsesRegistry() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, new ProcessorContext(), registry);
 
         assertTrue(pipeline.addProcessor("log", "LogAttribute",
@@ -140,7 +139,7 @@ final class ProviderWiringTest {
         content.enable();
         ctx.addProvider(content);
 
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         Processor p = registry.create("ExtractText", Map.of("pattern", "."), ctx);
         assertNotNull(p);
     }

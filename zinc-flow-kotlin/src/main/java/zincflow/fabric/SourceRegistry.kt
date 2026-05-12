@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.collections.listOf
 
 /** Registry of source factories keyed by `name@version`. Mirror
- * of [Registry] for [Source] plugins. Config resolves
+ * of [ProcessorRegistry] for [Source] plugins. Config resolves
  * `type: GetFile@1.0.0` → factory → instance the same way
  * processors do; a bare `type: GetFile` falls through to the
  * latest registered version. */

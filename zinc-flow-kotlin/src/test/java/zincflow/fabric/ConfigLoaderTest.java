@@ -24,7 +24,7 @@ final class ConfigLoaderTest {
                         config: {}
                   connections: {}
                 """;
-        var graph = new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml);
+        var graph = new ConfigLoader(new ProcessorRegistry(), new ProcessorContext(), null, null).load(yaml);
         assertNotNull(graph);
     }
 
@@ -39,7 +39,7 @@ final class ConfigLoaderTest {
                       config:
                         prefix: "[in] "
                 """;
-        var graph = new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml);
+        var graph = new ConfigLoader(new ProcessorRegistry(), new ProcessorContext(), null, null).load(yaml);
         assertEquals(1, graph.getProcessors().size());
         assertEquals(List.of(), graph.next("ingress", "success"));
         assertEquals(List.of("ingress"), graph.getEntryPoints());
@@ -62,7 +62,7 @@ final class ConfigLoaderTest {
                     a:
                       success: [b]
                 """;
-        var graph = new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml);
+        var graph = new ConfigLoader(new ProcessorRegistry(), new ProcessorContext(), null, null).load(yaml);
         assertEquals(List.of("b"), graph.next("a", "success"));
     }
 
@@ -77,7 +77,7 @@ final class ConfigLoaderTest {
                 """;
 
 //        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
-        assertThrows(ConfigProcessingException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
+        assertThrows(ConfigProcessingException.class, () -> new ConfigLoader(new ProcessorRegistry(), new ProcessorContext(), null, null).load(yaml));
 
     }
 
@@ -90,7 +90,7 @@ final class ConfigLoaderTest {
                     x:
                       type: NotARealProcessor
                 """;
-        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
+        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new ProcessorRegistry(), new ProcessorContext(), null, null).load(yaml));
     }
 
     @Test
@@ -103,7 +103,7 @@ final class ConfigLoaderTest {
                       type: LogAttribute
                 """;
 //        assertThrows(IllegalArgumentException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
-        assertThrows(ConfigProcessingException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
+        assertThrows(ConfigProcessingException.class, () -> new ConfigLoader(new ProcessorRegistry(), new ProcessorContext(), null, null).load(yaml));
     }
 
     @Test
@@ -118,7 +118,7 @@ final class ConfigLoaderTest {
                     a:
                       success: [nosuch]
                 """;
-        assertThrows(ConfigProcessingException.class, () -> new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml));
+        assertThrows(ConfigProcessingException.class, () -> new ConfigLoader(new ProcessorRegistry(), new ProcessorContext(), null, null).load(yaml));
     }
 
     @Test
@@ -140,7 +140,7 @@ final class ConfigLoaderTest {
                     router:
                       high: [elevate]
                 """;
-        var graph = new ConfigLoader(new Registry(), new ProcessorContext(), null, null).load(yaml);
+        var graph = new ConfigLoader(new ProcessorRegistry(), new ProcessorContext(), null, null).load(yaml);
         var pipeline = new Pipeline(graph);
         var ff = FlowFile.Companion.invoke(0, Map.of("priority", "urgent"), new RawContent(new byte[0]), 0, 0);
         pipeline.ingest(ff);

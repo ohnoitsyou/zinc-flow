@@ -26,7 +26,7 @@ final class OverlaysHttpTest {
     void teardown() { if (server != null) server.stop(); }
 
     private HttpServer boot(Path base) throws Exception {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var loader = new ConfigLoader(registry);
         var graph = loader.loadFromFile(base);
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, null, loader.context(), registry);
@@ -76,8 +76,7 @@ final class OverlaysHttpTest {
         assertEquals(baseYaml.toString(), body.get("base").asText());
         assertEquals(3, body.get("layers").size());
         // Local overlay overrode the base prefix.
-        assertEquals("local",
-                body.get("provenance").get("flow.processors.a.config.prefix").asText());
+        assertEquals("local", body.get("provenance").get("flow.processors.a.config.prefix").asText());
     }
 
     @Test

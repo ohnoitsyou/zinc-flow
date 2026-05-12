@@ -28,7 +28,7 @@ final class GraphMutationHttpTest {
 
     @BeforeEach
     void boot() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var context = new ProcessorContext();
         pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
         // Seed three processors via the admin API semantics so they're

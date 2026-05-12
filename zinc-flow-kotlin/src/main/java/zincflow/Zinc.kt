@@ -16,7 +16,7 @@ import zincflow.fabric.Pipeline
 import zincflow.fabric.PipelineGraph
 import zincflow.fabric.PluginLoader
 import zincflow.fabric.ProviderRegistry
-import zincflow.fabric.Registry
+import zincflow.fabric.ProcessorRegistry
 import zincflow.fabric.SourceRegistry
 import zincflow.fabric.TypeRefs
 import zincflow.processors.LogAttribute
@@ -82,7 +82,7 @@ object Zinc {
         }
 
         val configPath = resolveConfigPath(args)
-        val registry = Registry()
+        val processorRegistry = ProcessorRegistry()
         val sourceRegistry = SourceRegistry()
         val providerRegistry = ProviderRegistry()
         val context = ProcessorContext()
@@ -105,7 +105,7 @@ object Zinc {
         // so config.yaml can reference plugin-provided types.
         val pluginsDir = resolvePluginsDir()
         val plugins = PluginLoader.loadFromDirectory(
-            pluginsDir, registry, context, sourceRegistry
+            pluginsDir, processorRegistry, context, sourceRegistry
         )
         if (plugins.totalLoaded() > 0) {
             log.info(
@@ -115,7 +115,7 @@ object Zinc {
             )
         }
 
-        val loader = ConfigLoader(registry, context, sourceRegistry, providerRegistry)
+        val loader = ConfigLoader(processorRegistry, context, sourceRegistry, providerRegistry)
         val graph: PipelineGraph = if (configPath != null && Files.isRegularFile(configPath)) {
             log.info("loading pipeline from {}", configPath.toAbsolutePath())
             loader.loadFromFile(configPath)
@@ -124,7 +124,7 @@ object Zinc {
             demoGraph()
         }
         val metrics = Metrics()
-        val pipeline = Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics, context, registry)
+        val pipeline = Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, metrics, context, processorRegistry)
 
         // Backfill processorDefs with the YAML-loaded configs so the
         // UI drawer / /api/flow can surface them. addProcessor (the
@@ -335,12 +335,12 @@ object Zinc {
             return 2
         }
 
-        val registry = Registry()
+        val processorRegistry = ProcessorRegistry()
         val sources = SourceRegistry()
         val providers = ProviderRegistry()
         PluginLoader.loadSources(Zinc::class.java.classLoader, sources)
         PluginLoader.loadProviders(Zinc::class.java.classLoader, providers)
-        val loader = ConfigLoader(registry, ProcessorContext(), sources, providers)
+        val loader = ConfigLoader(processorRegistry, ProcessorContext(), sources, providers)
 
         val graph: PipelineGraph?
         try {

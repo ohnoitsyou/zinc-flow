@@ -19,55 +19,28 @@ import kotlin.time.TimeSource
  * Expected shape (mirrors zinc-flow-csharp):
  * 
  * flow:
- * entryPoints: [ingress]
- * processors:
- * ingress:
- * type: LogAttribute
- * config:
- * prefix: "[in] "
- * router:
- * type: RouteOnAttribute
- * config:
- * routes: "high: priority == urgent"
- * connections:
- * ingress:
- * success: [router]
- * router:
- * high: [sink]
- * unmatched: [sink]
- */
-/*
-
-flow_defn:
-  - entryPoints: <entryPoints_defn>
-  - processors: <processors_defn>
-  - connections: <connections_defn>
-
-processors_defn: <Map<processor_defn>>
-processor_defn: <Map<String, Map<String, String>>>
- - key: String
- - value: Map<String, String>
-
-flow: 
-  entryPoints:
-    - a
-  processors:
-    a:
-      type: UpdateAttribute
-      config:
-        key: stage
-        value: first
-    b:
-      type: LogAttribute
-  connections:
-    a:
-      success: [b]
+ *   entryPoints: [ ingress ]
+ *   processors:
+ *     ingress:
+ *       type: LogAttribute
+ *       config:
+ *         prefix: "[ in ] "
+ *     router:
+ *       type: RouteOnAttribute
+ *       config:
+ *         routes: "high: priority == urgent"
+ *   connections:
+ *     ingress:
+ *       success: [ router ]
+ *     router:
+ *       high: [ sink ]
+ *       unmatched: [ sink ]
  */
 class ConfigProcessingException(msg: String, ex: Throwable? = null) : RuntimeException(msg, ex)
 data class ProcessorSpec(val type: String, val config: Map<String, String>)
 
 class ConfigLoader @JvmOverloads constructor(
-    private val registry: Registry,
+    private val processorRegistry: ProcessorRegistry,
     context: ProcessorContext? = ProcessorContext(),
     private val sourceRegistry: SourceRegistry? = null,
     private val providerRegistry: ProviderRegistry? = null,
@@ -165,7 +138,7 @@ class ConfigLoader @JvmOverloads constructor(
             val proc: Processor = if (last != null && last == spec && lastProcessors.containsKey(name)) {
                 lastProcessors[name]!!
             } else {
-                registry.create(spec.type, spec.config, context)!!
+                processorRegistry.create(spec.type, spec.config, context)!!
             }
             createdProcessors[name] = proc
             specs[name] = spec
@@ -197,7 +170,7 @@ class ConfigLoader @JvmOverloads constructor(
             val p = if (prior != null && prior == spec && lastProcessors.containsKey(name)) {
                 lastProcessors[name]!!
             } else {
-                registry.create(spec.type, spec.config, context) ?: throw ConfigProcessingException("config: Unknown procesor type: '${spec.type}")
+                processorRegistry.create(spec.type, spec.config, context) ?: throw ConfigProcessingException("config: Unknown procesor type: '${spec.type}")
             }
             processors[name] = p
             specs[name] = spec

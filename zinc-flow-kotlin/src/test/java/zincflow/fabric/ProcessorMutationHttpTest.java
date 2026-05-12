@@ -23,7 +23,7 @@ final class ProcessorMutationHttpTest {
 
     @BeforeEach
     void boot() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var context = new ProcessorContext();
         pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, registry);
         pipeline.addProcessor("router", "RouteOnAttribute",

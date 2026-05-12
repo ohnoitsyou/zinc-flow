@@ -10,13 +10,13 @@ import static org.junit.jupiter.api.Assertions.*;
 /// Mirrors zinc-flow-csharp's RegistryMetadataTests — every built-in
 /// exposes a coherent typed ParamInfo list so the UI's schema-driven form
 /// works on both tracks.
-final class RegistryMetadataTest {
+final class ProcessorRegistryMetadataTest {
 
     @Test
     void everyBuiltinHasCategoryAndParameters() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         assertFalse(r.listAll().isEmpty(), "registry is non-empty");
-        for (Registry.TypeInfo info : r.listAll()) {
+        for (ProcessorRegistry.TypeInfo info : r.listAll()) {
             assert info != null;
             assertNotEquals("Other", info.getCategory(),
                     info.getName() + ": built-ins must declare a real category");
@@ -34,7 +34,7 @@ final class RegistryMetadataTest {
 
     @Test
     void enumParametersHaveChoices() {
-        for (Registry.TypeInfo info : new Registry().listAll()) {
+        for (ProcessorRegistry.TypeInfo info : new ProcessorRegistry().listAll()) {
             assert info != null;
             for (ParamInfo p : info.getParameters()) {
                 if (p.getKind() == ParamKind.ENUM) {
@@ -53,7 +53,7 @@ final class RegistryMetadataTest {
 
     @Test
     void keyValueListCarriesDelimiters() {
-        for (Registry.TypeInfo info : new Registry().listAll()) {
+        for (ProcessorRegistry.TypeInfo info : new ProcessorRegistry().listAll()) {
             assert info != null;
             for (ParamInfo p : info.getParameters()) {
                 if (p.getKind() == ParamKind.KEY_VALUE_LIST) {
@@ -70,7 +70,7 @@ final class RegistryMetadataTest {
 
     @Test
     void legacyConstructorStillWorks() {
-        var info = new Registry.TypeInfo("X", "1.0.0", "test",
+        var info = new ProcessorRegistry.TypeInfo("X", "1.0.0", "test",
                 java.util.List.of("a", "b"), java.util.List.of("success"));
         assertEquals("Other", info.getCategory());
         assertEquals(2, info.getParameters().size());
@@ -81,7 +81,7 @@ final class RegistryMetadataTest {
 
     @Test
     void routeRecordShape() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         var info = r.latest("RouteRecord");
         assertNotNull(info, "RouteRecord registered");
         assertEquals("Routing", info.getCategory());
@@ -98,7 +98,7 @@ final class RegistryMetadataTest {
 
     @Test
     void newPrimitivesRegistered() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         assertTrue(r.has("RouteRecord"));
         assertTrue(r.has("UpdateRecord"));
         assertTrue(r.has("SplitRecord"));

@@ -4,7 +4,7 @@ import zincflow.core.Provider
 import java.util.concurrent.ConcurrentHashMap
 
 /** Registry of provider factories keyed by `name@version`.
- * Parallel to [Registry] / [SourceRegistry]. Callers
+ * Parallel to [ProcessorRegistry] / [SourceRegistry]. Callers
  * resolve a config `type: LoggingProvider@1.0.0` to a factory
  * at load time; a bare `type: LoggingProvider` picks the
  * latest version.

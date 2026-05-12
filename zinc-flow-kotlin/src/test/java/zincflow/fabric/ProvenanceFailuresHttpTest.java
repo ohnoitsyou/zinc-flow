@@ -28,7 +28,7 @@ final class ProvenanceFailuresHttpTest {
         prov.enable();
         var context = new ProcessorContext();
         context.addProvider(prov);
-        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, new Registry());
+        var pipeline = new Pipeline(PipelineGraph.Companion.empty(), Pipeline.DEFAULT_MAX_HOPS, null, context, new ProcessorRegistry());
         server = new HttpServer(pipeline).start(0);
     }
 

@@ -10,11 +10,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-final class RegistryTest {
+final class ProcessorRegistryTest {
 
     @Test
     void builtinsAreRegistered() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         assertTrue(r.has("LogAttribute"));
         assertTrue(r.has("UpdateAttribute"));
         assertTrue(r.has("RouteOnAttribute"));
@@ -27,7 +27,7 @@ final class RegistryTest {
 
     @Test
     void createReturnsTypedInstances() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         assertInstanceOf(LogAttribute.class, r.create("LogAttribute", Map.of("prefix", "[x]")));
         assertInstanceOf(UpdateAttribute.class, r.create("UpdateAttribute",
                 Map.of("key", "k", "value", "v")));
@@ -36,7 +36,7 @@ final class RegistryTest {
 
     @Test
     void missingRequiredConfigRejected() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         assertThrows(IllegalArgumentException.class,
                 () -> r.create("UpdateAttribute", Map.of())); // missing key
         assertThrows(IllegalArgumentException.class,
@@ -50,13 +50,13 @@ final class RegistryTest {
     @Test
     void unknownTypeRejected() {
         assertThrows(IllegalArgumentException.class,
-                () -> new Registry().create("Unknown", Map.of()));
+                () -> new ProcessorRegistry().create("Unknown", Map.of()));
     }
 
     @Test
     void customProcessorCanBeRegistered() {
         Processor trivial = ff -> new zincflow.core.ProcessorResult.Dropped();
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         r.register("Trivial", (cfg, ctx) -> trivial);
         assertSame(trivial, r.create("Trivial", Map.of()));
     }

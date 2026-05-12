@@ -44,7 +44,7 @@ object PipelineMetrics {
 
     fun recordSave(): Int {
         lastSaveCounter.set(mutationCounter.get())
-        lastSaveTick = Clock.System.now()
+        updateTick()
         return lastSaveCounter.get()
     }
 
@@ -58,7 +58,7 @@ class Pipeline @JvmOverloads constructor(
     private val maxHops: Int = DEFAULT_MAX_HOPS,
     metrics: Metrics? = null,
     private val context: ProcessorContext = ProcessorContext(),
-    private val registry: Registry = Registry(),
+    private val processorRegistry: ProcessorRegistry = ProcessorRegistry(),
 ) {
     private val stats: Stats = Stats(metrics)
 //    private val context: ProcessorContext
@@ -88,8 +88,8 @@ class Pipeline @JvmOverloads constructor(
         return context
     }
 
-    fun registry(): Registry {
-        return registry
+    fun registry(): ProcessorRegistry {
+        return processorRegistry
     }
 
     fun getEdgeStats(): Map<String, Long> {
@@ -136,12 +136,12 @@ class Pipeline @JvmOverloads constructor(
         if (name.isEmpty()) return false
         val g = graph
         if (g.processors.containsKey(name)) return false
-        if (!registry.has(type)) return false
+        if (!processorRegistry.has(type)) return false
 
         val req = requires.toMutableList()
         for (provName in req) context.registerDependent(provName, name)
 
-        val proc = registry.create(type, config, context) ?: return false
+        val proc = processorRegistry.create(type, config, context) ?: return false
 
         val newProcessors = g.processors.toMutableMap()
         newProcessors[name] = proc
@@ -193,12 +193,12 @@ class Pipeline @JvmOverloads constructor(
         if ("unknown" == effectiveType) {
             return EditResult.fail("cannot determine type for '$name' — pass 'type' explicitly")
         }
-        if (!registry.has(effectiveType)) {
+        if (!processorRegistry.has(effectiveType)) {
             return EditResult.fail("unknown processor type '$effectiveType'")
         }
 
         val cfg = config.toMap()
-        val rebuilt = registry.create(effectiveType, cfg, context) ?: return EditResult.fail("Could not rebuild processor")
+        val rebuilt = processorRegistry.create(effectiveType, cfg, context) ?: return EditResult.fail("Could not rebuild processor")
 
         val newProcessors = g.processors.toMutableMap()
         newProcessors[name] = rebuilt

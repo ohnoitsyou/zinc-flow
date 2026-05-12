@@ -6,24 +6,21 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.fasterxml.jackson.databind.node.ObjectNode
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
 import io.javalin.Javalin
 import io.javalin.config.JavalinConfig
+import io.javalin.config.Key
 import io.javalin.http.BadRequestResponse
 import io.javalin.http.Context
-import io.javalin.http.bodyAsClass
 import io.javalin.json.JavalinJackson
 import org.eclipse.jetty.util.thread.QueuedThreadPool
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import zincflow.core.FlowFile
 import zincflow.core.JsonMapper
-import zincflow.core.Source
 import zincflow.core.YamlMapper
 import zincflow.fabric.Pipeline.EditResult
 import zincflow.fabric.PluginLoader.loadFromDirectory
-import zincflow.providers.ProvenanceProvider
+import zincflow.fabric.VcCommandResponse.Companion.toResponseObj
 import zincflow.providers.ProvenanceProvider.EventType
 import zincflow.providers.SchemaRegistryProvider
 import zincflow.providers.VersionControlProvider
@@ -32,14 +29,12 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
-import java.util.Locale
 import java.util.TreeMap
 import java.util.concurrent.Executors
 import kotlin.collections.mapOf
 import kotlin.collections.mutableMapOf
 import kotlin.concurrent.Volatile
 import kotlin.io.path.absolute
-import kotlin.math.max
 import kotlin.time.Instant
 
 /** HTTP surface for zinc-flow-java:
@@ -71,13 +66,20 @@ class HttpServer @JvmOverloads constructor(
     private val json: ObjectMapper = JsonMapper.mapper,
     private val yaml: ObjectMapper = YamlMapper.mapper,
 ) {
-//    private val plugins: PluginLoader.Summary
-    private var app: Javalin? = null
+    //    private val plugins: PluginLoader.Summary
+    private val app: Javalin
 
     @Volatile
     private var boundPort = -1
 
-    fun start(port: Int): HttpServer {
+    @Volatile
+    private var currentPlugins: PluginLoader.Summary? = null
+
+    /** Full constructor — wires in the plugin summary and node identity
+     * so `/api/plugins` and `/api/identity` can answer. */
+    /** Constructor for the config-driven path — enables `/api/reload`. */
+    init {
+        this.plugins = plugins ?: PluginLoader.Summary.empty()
         app = Javalin.create { cfg: JavalinConfig ->
             // Virtual-thread handoff for HTTP requests. Jetty's
             // QueuedThreadPool keeps a small platform-thread pool
@@ -114,7 +116,7 @@ class HttpServer @JvmOverloads constructor(
             .post("/api/reload") { handleReload(it) }
             .get("/api/providers") { handleProviders(it) }
             .post("/api/providers/enable") { handleEnableProvider(it) }
-            .post("/api/providers/disable" ) { handleDisableProvider(it) }
+            .post("/api/providers/disable") { handleDisableProvider(it) }
             // Order matters — specific paths register before the
             // {id} wildcard or Javalin binds /api/provenance/failures
             // to handleProvenanceById with id="failures" and 400s.
@@ -158,12 +160,14 @@ class HttpServer @JvmOverloads constructor(
         // of an endpoint that always returns an error.
         val schemaRegistry = pipeline.context()
             .getProviderAs(SchemaRegistryProvider.NAME, SchemaRegistryProvider::class.java)
-        if (schemaRegistry != null && app != null) {
-            SchemaRegistryHandler(schemaRegistry).mapRoutes(app!!)
+        if (schemaRegistry != null) {
+            SchemaRegistryHandler(schemaRegistry).mapRoutes(app)
         }
+    }
 
-        app!!.start(port)
-        boundPort = app!!.port()
+    fun start(port: Int): HttpServer {
+        app.start(port)
+        boundPort = app.port()
         log.info("zinc-flow HTTP server listening on http://localhost:{}", boundPort)
         return this
     }
@@ -174,8 +178,8 @@ class HttpServer @JvmOverloads constructor(
     }
 
     fun stop() {
-        app?.stop()
-        app = null
+        app.stop()
+//        app = null
         boundPort = -1
 
         // Release plugin classloaders (both the reload-replaced current
@@ -214,29 +218,30 @@ class HttpServer @JvmOverloads constructor(
 
     @JsonDeserialize(using = UIFlowFileDeserializer::class)
     sealed class FlowFileIngest(val target: String, val content: String, val attributes: Map<String, String>) {
-        class ContentFlowFile(target: String, content: String, attributes: Map<String, String>) : FlowFileIngest(target, content, attributes)
-        class Base64FlowFile(target: String, contentBase64: String, attributes: Map<String, String>): FlowFileIngest(target,
-            Base64.getDecoder().decode(contentBase64).contentToString(), attributes)
+        class ContentFlowFile(target: String, content: String, attributes: Map<String, String>) :
+            FlowFileIngest(target, content, attributes)
+
+        class Base64FlowFile(target: String, contentBase64: String, attributes: Map<String, String>) : FlowFileIngest(
+            target,
+            Base64.getDecoder().decode(contentBase64).contentToString(), attributes
+        )
     }
 
     class UIFlowFileDeserializer : StdDeserializer<FlowFileIngest>(FlowFileIngest::class.java) {
         companion object {
-            private val mapper = jacksonObjectMapper()
+            private val mapper = JsonMapper.mapper
         }
-        override fun deserialize(
-            parser: JsonParser,
-            ctx: DeserializationContext,
-        ): FlowFileIngest {
+
+        override fun deserialize(parser: JsonParser, ctx: DeserializationContext): FlowFileIngest {
             val root = mapper.readTree<ObjectNode>(parser)
             return if (root != null && root.has("contentBase64")) {
                 mapper.treeToValue(root, FlowFileIngest.Base64FlowFile::class.java)
-            } else if(root != null && root.has("content")) {
+            } else if (root != null && root.has("content")) {
                 mapper.treeToValue(root, FlowFileIngest.ContentFlowFile::class.java)
             } else {
                 throw IllegalArgumentException("Could not determine type")
             }
         }
-
     }
 
     /** UI-facing flowfile injection. Accepts JSON
@@ -257,11 +262,12 @@ class HttpServer @JvmOverloads constructor(
         try {
             if (body.target.isEmpty() || "*" == body.target) {
                 pipeline.ingest(ff)
-                ctx.json(mapOf(
-                    "status" to "ingested",
-                    "flowfile" to ff.stringId(),
-                    "target" to "entry-points"
-                ))
+                ctx.json(IngestResponse("ingested", ff.stringId(), "entry-points"))
+//                ctx.json(mapOf(
+//                    "status" to "ingested",
+//                    "flowfile" to ff.stringId(),
+//                    "target" to "entry-points"
+//                ))
 //                ctx.contentType("application/json").result(
 //                    json.writeValueAsBytes(
 //                        mapOf(
@@ -273,11 +279,12 @@ class HttpServer @JvmOverloads constructor(
 //                )
             } else {
                 pipeline.ingestAt(ff, body.target)
-                ctx.json(mapOf(
-                    "status" to "ingested",
-                    "flowfile" to ff.stringId(),
-                    "target" to body.target
-                ))
+                ctx.json(IngestResponse("ingested", ff.stringId(), body.target))
+//                ctx.json(mapOf(
+//                    "status" to "ingested",
+//                    "flowfile" to ff.stringId(),
+//                    "target" to body.target
+//                ))
 //                ctx.contentType("application/json").result(
 //                    json.writeValueAsBytes(
 //                        mapOf(
@@ -305,10 +312,11 @@ class HttpServer @JvmOverloads constructor(
             return
         }
         pipeline.stats().resetProcessor(name)
-        ctx.json(mapOf(
-            "status" to "reset",
-            "name" to name
-        ))
+        ctx.json(StatusResponse.OKStatus(name, "reset"))
+//        ctx.json(mapOf(
+//            "status" to "reset",
+//            "name" to name
+//        ))
 //        ctx.contentType("application/json").result(
 //            json.writeValueAsBytes(
 //                mapOf(
@@ -334,14 +342,22 @@ class HttpServer @JvmOverloads constructor(
      * Detailed counters (per-processor totals, drops, failures) stay
      * on `/api/processor-stats` and the internal
      * [Stats.snapshot] method for programmatic consumers. */
-    private fun summaryStats(): Map<String, Any?> {
-        return buildMap {
-            put("processed", pipeline.stats().snapshot()["totalProcessed"])
-            put("activeExecutions", pipeline.metrics().activeExecutions())
-            put("processors", pipeline.graph().processors.size)
-            put("sources", pipeline.sources().size)
-        }
+    private fun summaryStats(): SummaryStats {
+        return SummaryStats(
+            pipeline.stats().snapshotObj().totalProcessed,
+            pipeline.metrics().activeExecutions(),
+            pipeline.graph().processors.size,
+            pipeline.sources().size
+        )
     }
+//    private fun summaryStats(): Map<String, Any?> {
+//        return buildMap {
+//            put("processed", pipeline.stats().snapshotObj().totalProcessed)
+//            put("activeExecutions", pipeline.metrics().activeExecutions())
+//            put("processors", pipeline.graph().processors.size)
+//            put("sources", pipeline.sources().size)
+//        }
+//    }
 
     @Throws(Exception::class)
     private fun handleProcessors(ctx: Context) {
@@ -363,45 +379,17 @@ class HttpServer @JvmOverloads constructor(
 //        ctx.contentType("application/json").result(json.writeValueAsBytes(pipeline.graph().connections))
     }
 
-    data class FlowResponse(
-        val entryPoints: List<String>,
-        val processors: List<FlowResponseProcessor>,
-        val connections: Map<String, Map<String, List<String>>>,
-        val providers: List<FlowResponseProvider>,
-        val sources: List<FlowResponseSource>,
-        val stats: Map<String, Any?>
-    )
-
-    data class FlowResponseProcessor(
-        val name: String,
-        val type: String,
-        val state: String,
-        val config: Map<String, String>,
-        val stats: Map<String, Long>,
-        val connections: Map<String, List<String>>
-    )
-    data class FlowResponseProvider(
-        val name: String,
-        val type: String,
-        val stats: String
-    )
-    data class FlowResponseSource(
-        val name: String,
-        val type: String,
-        val running: Boolean,
-    )
-
     @Throws(Exception::class)
     private fun handleFlow(ctx: Context) {
         val graph = pipeline.graph()
 
-        val processors = mutableListOf<FlowResponseProcessor>()
+        val processors = mutableListOf<FlowProcessorResponse>()
 //        val processors = mutableListOf<Map<String, Any>>()
 //        val perProcStats =
         // TODO: Change to use `.map`
         for (entry in graph.processors.entries) {
             val name = entry.key
-            val info = FlowResponseProcessor(
+            val info = FlowProcessorResponse(
                 name,
                 pipeline.processorType(name),
                 pipeline.processorState(name).name,
@@ -423,7 +411,7 @@ class HttpServer @JvmOverloads constructor(
         val context = pipeline.context()
         val providers = context.listProviders().map { providerName ->
             val p = context.getProvider(providerName)
-            FlowResponseProvider(providerName, (p?.providerType() ?: "unknown"), (p?.state()?.name ?: "UNKNOWN"))
+            FlowProviderResponse(providerName, (p?.providerType() ?: "unknown"), (p?.state()?.name ?: "UNKNOWN"))
 //            mapOf(
 //                "name" to providerName,
 //                "type" to (p?.providerType() ?: "unknown"),
@@ -432,7 +420,7 @@ class HttpServer @JvmOverloads constructor(
         }
 
         val sources = pipeline.sources().values.map { source ->
-            FlowResponseSource(source.name(), source.sourceType(), source.isRunning)
+            FlowSourceResponse(source.name(), source.sourceType(), source.isRunning)
 //            mapOf("name" to source.name(), "type" to source.sourceType(), "running" to  source.isRunning)
         }
 
@@ -484,7 +472,7 @@ class HttpServer @JvmOverloads constructor(
     private fun handleRegistry(ctx: Context) {
         // Emit the latest version of each type, matching the C# worker's
         // shape so the shared React UI consumes both uniformly.
-        val latestByName = TreeMap<String, Registry.TypeInfo>()
+        val latestByName = TreeMap<String, ProcessorRegistry.TypeInfo>()
         for (info in pipeline.registry().listAll()) {
             val prev = latestByName[info.name]
             if (prev == null || TypeRefs.compareVersions(info.version, prev.version) > 0) {
@@ -492,8 +480,10 @@ class HttpServer @JvmOverloads constructor(
             }
         }
 
-        val out = latestByName.values.map { typeInfoToJson(it) }
-        ctx.contentType("application/json").result(json.writeValueAsBytes(out))
+//        val out = latestByName.values.map { typeInfoToJson(it) }
+        // As long as it can serialize properly, this should go out fine
+        ctx.json(latestByName.values)
+//        ctx.contentType("application/json").result(json.writeValueAsBytes(out))
     }
 
     private fun handleMetrics(ctx: Context) {
@@ -547,11 +537,11 @@ class HttpServer @JvmOverloads constructor(
     }
 
     // --- Health ---
-    data class HealthResponse(val status: String, val sources: List<FlowResponseSource>)
+    data class HealthResponse(val status: String, val sources: List<FlowSourceResponse>)
     @Throws(Exception::class)
     private fun handleHealth(ctx: Context) {
         val sources = pipeline.sources().values.map { source ->
-            FlowResponseSource(source.name(), source.sourceType(), source.isRunning)
+            FlowSourceResponse(source.name(), source.sourceType(), source.isRunning)
 //            mapOf("name" to source.name(), "type" to source.sourceType(), "running" to source.isRunning)
         }
 //        val sources: List<Map<String, Any>> = pipeline.sources().values.map { source ->
@@ -594,7 +584,7 @@ class HttpServer @JvmOverloads constructor(
         val context = pipeline.context()
         val out = context.listProviders().map { providerName ->
             val p = context.getProvider(providerName)
-            FlowResponseProvider(providerName, (p?.providerType() ?: "unknown"), (p?.state()?.name ?: "UNKNOWN"))
+            FlowProviderResponse(providerName, (p?.providerType() ?: "unknown"), (p?.state()?.name ?: "UNKNOWN"))
 //            mapOf(
 //                "name" to providerName,
 //                "type" to (p?.providerType() ?: "unknown"),
@@ -669,17 +659,10 @@ class HttpServer @JvmOverloads constructor(
 //        }
         val events = prov.getEvents(id)
 //        val shape = shape(events)
-        ctx.contentType("application/json").result(json.writeValueAsBytes(events))
+        ctx.json(events)
+//        ctx.contentType("application/json").result(json.writeValueAsBytes(events))
     }
 
-    // --- Processor admin ---
-    data class AddProcessorBody(
-        val name: String,
-        val type: String,
-        val config: Map<String, String> = emptyMap(),
-        val requires: List<String> = emptyList(),
-        val connections: Map<String, List<String>> = emptyMap()
-    )
     @Throws(Exception::class)
     private fun handleAddProcessor(ctx: Context) {
 //        val body = readJsonBody(ctx)
@@ -688,7 +671,7 @@ class HttpServer @JvmOverloads constructor(
 //            return
 //        }
         try {
-            val body = ctx.bodyAsClass(AddProcessorBody::class.java)
+            val body = ctx.bodyAsClass(AddProcessorRequest::class.java)
 //            val name = body["name"]?.toString().takeIf { it?.isNotEmpty() == true } ?: throw IllegalArgumentException("Name is required but not provided")
 //            val type = body[ConfigLoader.TYPE_KEY]?.toString().takeIf { it?.isNotEmpty() == true } ?: throw IllegalArgumentException("Type is required but not provided")
 
@@ -710,11 +693,10 @@ class HttpServer @JvmOverloads constructor(
         }
     }
 
-    data class RemoveProcessorBody(val name: String)
     @Throws(Exception::class)
     private fun handleRemoveProcessor(ctx: Context) {
         try {
-            val request = ctx.bodyAsClass(RemoveProcessorBody::class.java)
+            val request = ctx.bodyAsClass(RemoveProcessorRequest::class.java)
             val ok = pipeline.removeProcessor(request.name)
             writeStatus(ctx, ok, request.name, "removed", "processor not found")
         } catch (e: Exception) {
@@ -729,11 +711,10 @@ class HttpServer @JvmOverloads constructor(
 //        writeStatus(ctx, ok, name, "removed", "processor not found")
     }
 
-    data class EnableProcessorBody(val name: String = "")
     @Throws(Exception::class)
     private fun handleEnableProcessor(ctx: Context) {
         try {
-            val request = ctx.bodyAsClass(EnableProcessorBody::class.java)
+            val request = ctx.bodyAsClass(EnableProcessorRequest::class.java)
             if(request.name.isEmpty()) {
                 throw BadRequestResponse("Name required")
             }
@@ -751,11 +732,10 @@ class HttpServer @JvmOverloads constructor(
 //        writeStatus(ctx, ok, name, "enabled", "processor not found")
     }
 
-    data class DisableProcessorBody(val name: String)
     @Throws(Exception::class)
     private fun handleDisableProcessor(ctx: Context) {
         try {
-            val request = ctx.bodyAsClass(DisableProcessorBody::class.java)
+            val request = ctx.bodyAsClass(DisableProcessorRequest::class.java)
             val ok = pipeline.disableProcessor(request.name)
             writeStatus(ctx, ok, request.name, "disabled", "processor not found")
         } catch (e: Exception) {
@@ -770,12 +750,10 @@ class HttpServer @JvmOverloads constructor(
 //        writeStatus(ctx, ok, name, "disabled", "processor not found")
     }
 
-    data class ProcessorStateBody(val name: String)
-    data class ProcessorStateResponse(val name: String, val state: String)
     @Throws(Exception::class)
     private fun handleProcessorState(ctx: Context) {
         try {
-            val request = ctx.bodyAsClass(ProcessorStateBody::class.java)
+            val request = ctx.bodyAsClass(ProcessorStateRequest::class.java)
             if (!pipeline.graph().processors.containsKey(request.name)) {
                 writeError(ctx, 404, "processor not found")
             } else {
@@ -800,18 +778,6 @@ class HttpServer @JvmOverloads constructor(
 //        )
     }
 
-    data class ProcessorSamplesRequest(val name: String = "")
-    data class SampleResponse(val timestamp: Instant, val flowfile: String, val contentType: String, val preview: String?, val previewBas64: String?, val attributes: Map<String, String>) {
-        companion object {
-            fun of(sample: SampleRegistry.SampleEntry): SampleResponse {
-                return with(sample) {
-                    val b64 = if (contentType == "records") null else kotlin.io.encoding.Base64.encode(preview)
-                    SampleResponse(timestamp, "ff-${flowfileId}", contentType, SampleRegistry.previewAsString(preview), b64, attributes)
-                }
-            }
-        }
-    }
-    data class ProcessorSamplesResponse(val name: String, val sampling: Boolean, val samples: List<SampleResponse>)
     @Throws(Exception::class)
     private fun handleProcessorSamples(ctx: Context) {
         try {
@@ -851,7 +817,6 @@ class HttpServer @JvmOverloads constructor(
         return configPath?.absolute()?.resolveSibling("layout.yaml")?.toString() ?: ""
     }
 
-    data class LayoutResponse(val positions: Map<String, LayoutXY>, val path: String = "")
     @Throws(Exception::class)
     private fun handleGetLayout(ctx: Context) {
         val path = findLayoutFilePath()
@@ -878,16 +843,15 @@ class HttpServer @JvmOverloads constructor(
         ctx.json(mapOf("status" to "saved", "path" to path, "bytes" to posBytes.size, "positions" to  positions.positions.size))
     }
 
-    data class Layout(val positions: Map<String, LayoutXY>)
-    data class LayoutXY(val x: Double, val y: Double)
-
     // --- Sources ---
     @Throws(Exception::class)
     private fun handleSources(ctx: Context) {
         val out = pipeline.sources().values.map { s ->
-            mapOf<String, Any>("name" to s.name(), "type" to s.sourceType(), "running" to s.isRunning)
+            FlowSourceResponse(s.name(), s.sourceType(), s.isRunning)
+//            mapOf<String, Any>("name" to s.name(), "type" to s.sourceType(), "running" to s.isRunning)
         }
-        ctx.contentType("application/json").result(json.writeValueAsBytes(out))
+        ctx.json(out)
+//        ctx.contentType("application/json").result(json.writeValueAsBytes(out))
     }
 
     @Throws(Exception::class)
@@ -912,85 +876,124 @@ class HttpServer @JvmOverloads constructor(
         writeStatus(ctx, ok, name, "stopped", "source not found")
     }
 
-    // --- Graph mutation (connections + entry points) ---
-    // TODO: Parse using data class
     @Throws(Exception::class)
     private fun handleAddConnection(ctx: Context) {
-        val body = readJsonBody(ctx)
-        if (body == null) {
-            writeError(ctx, 400, "invalid json body")
-            return
+        try {
+            val request = ctx.bodyAsClass(AddConnectionRequest::class.java)
+            val (from, relationship, to) = request
+            writeEditResult(
+                ctx, pipeline.addConnection(from, relationship, to),
+                ConnectionModificationResponse("added", from, relationship, to).toMap()
+            )
+        } catch(e: Exception) {
+            writeError(ctx, 400, "invalid json body: $e")
         }
-        val from: String = str(body["from"])
-        val rel: String = str(body["relationship"])
-        val to: String = str(body["to"])
-        writeEditResult(
-            ctx, pipeline.addConnection(from, rel, to),
-            mapOf("status" to "added", "from" to from, "relationship" to rel, "to" to to)
-        )
+//        val body = readJsonBody(ctx)
+//        if (body == null) {
+//            writeError(ctx, 400, "invalid json body")
+//            return
+//        }
+//        val from: String = str(body["from"])
+//        val rel: String = str(body["relationship"])
+//        val to: String = str(body["to"])
+//        writeEditResult(
+//            ctx, pipeline.addConnection(from, rel, to),
+//            mapOf("status" to "added", "from" to from, "relationship" to rel, "to" to to)
+//        )
     }
 
-    // TODO: Parse using data class
     @Throws(Exception::class)
     private fun handleRemoveConnection(ctx: Context) {
-        val body = readJsonBody(ctx)
-        if (body == null) {
-            writeError(ctx, 400, "invalid json body")
-            return
+        try {
+            val request = ctx.bodyAsClass(RemoveConnectionRequest::class.java)
+            val (from, relationship, to) = request
+            writeEditResult(
+                ctx, pipeline.removeConnection(from, relationship, to),
+                ConnectionModificationResponse("removed", from, relationship, to).toMap()
+//                mapOf("status" to "removed", "from" to from, "relationship" to relationship, "to" to to)
+            )
+
+        } catch (e: Exception) {
+            writeError(ctx, 400, "invalid json body: $e")
         }
-        val from: String = str(body["from"])
-        val rel: String = str(body["relationship"])
-        val to: String = str(body["to"])
-        writeEditResult(
-            ctx, pipeline.removeConnection(from, rel, to),
-            mapOf("status" to "removed", "from" to from, "relationship" to rel, "to" to to)
-        )
+
+//        val body = readJsonBody(ctx)
+//        if (body == null) {
+//            writeError(ctx, 400, "invalid json body")
+//            return
+//        }
+//        val from: String = str(body["from"])
+//        val rel: String = str(body["relationship"])
+//        val to: String = str(body["to"])
+//        writeEditResult(
+//            ctx, pipeline.removeConnection(from, rel, to),
+//            mapOf("status" to "removed", "from" to from, "relationship" to rel, "to" to to)
+//        )
     }
 
-    // TODO: Parse using data class
     @Throws(Exception::class)
     private fun handleSetConnections(ctx: Context) {
         val from = ctx.pathParam("from")
-        val body = readJsonBody(ctx)
-        if (body == null) {
-            writeError(ctx, 400, "invalid json body")
-            return
+        try {
+            val request = ctx.bodyAsClass(SetConnectionRequest::class.java)
+            writeEditResult(ctx, pipeline.setConnections(from, request.targets),
+                ConnectionSetResponse("replaced", from, request.targets).toMap()
+//                mapOf("status" to "replaced", "from" to from, "relationships" to request.targets)
+            )
+        } catch(e: Exception) {
+            writeError(ctx, 400, "invalid json body: $e")
         }
-        val relationships = mutableMapOf<String, List<String>>()
-        for (entry in body.entries) {
-            val list = entry.value
-            if (list is List<*>) {
-                val targets = list.map { str(it) }
-                relationships[entry.key] = targets
-            } else {
-                writeError(ctx, 400, "relationship '" + entry.key + "' must map to a list of target names")
-                return
-            }
-        }
-        writeEditResult(
-            ctx, pipeline.setConnections(from, relationships),
-            mapOf("status" to "replaced", "from" to from, "relationships" to relationships)
-        )
+
+//        val body = readJsonBody(ctx)
+//        if (body == null) {
+//            writeError(ctx, 400, "invalid json body")
+//            return
+//        }
+//        val relationships = mutableMapOf<String, List<String>>()
+//        for (entry in body.entries) {
+//            val list = entry.value
+//            if (list is List<*>) {
+//                val targets = list.map { str(it) }
+//                relationships[entry.key] = targets
+//            } else {
+//                writeError(ctx, 400, "relationship '" + entry.key + "' must map to a list of target names")
+//                return
+//            }
+//        }
+//        writeEditResult(
+//            ctx, pipeline.setConnections(from, relationships),
+//            mapOf("status" to "replaced", "from" to from, "relationships" to relationships)
+//        )
     }
 
-    // TODO: Parse using data class
     @Throws(Exception::class)
     private fun handleSetEntryPoints(ctx: Context) {
-        val body = readJsonBody(ctx)
-        if (body == null) {
-            writeError(ctx, 400, "invalid json body")
-            return
+        try {
+            val request = ctx.bodyAsClass(SetEntrypointRequest::class.java)
+            writeEditResult(
+                ctx, pipeline.setEntryPoints(request.names),
+                EntrypointModificationResponse("replaced", request.names).toMap()
+//                mapOf("status" to "replaced", "names" to request.names)
+            )
+        } catch(e: Exception) {
+            writeError(ctx, 400, "invalid json body: $e")
         }
-        val namesObj = body["names"]
-        if (namesObj !is List<*>) {
-            writeError(ctx, 400, "body must include a 'names' array")
-            return
-        }
-        val names = namesObj.map { str(it) }
-        writeEditResult(
-            ctx, pipeline.setEntryPoints(names),
-            mapOf("status" to "replaced", "names" to names)
-        )
+//
+//        val body = readJsonBody(ctx)
+//        if (body == null) {
+//            writeError(ctx, 400, "invalid json body")
+//            return
+//        }
+//        val namesObj = body["names"]
+//        if (namesObj !is List<*>) {
+//            writeError(ctx, 400, "body must include a 'names' array")
+//            return
+//        }
+//        val names = namesObj.map { str(it) }
+//        writeEditResult(
+//            ctx, pipeline.setEntryPoints(names),
+//            mapOf("status" to "replaced", "names" to names)
+//        )
     }
 
     @Throws(Exception::class)
@@ -1021,14 +1024,17 @@ class HttpServer @JvmOverloads constructor(
     private fun handleVcStatus(ctx: Context) {
         val v = vc()
         if (v == null || !v.isEnabled) {
-            ctx.contentType("application/json").result(
-                json.writeValueAsBytes(
-                    mapOf("enabled" to false)
-                )
-            )
-            return
+            ctx.json(mapOf("enabled" to false))
+//            ctx.contentType("application/json").result(
+//                json.writeValueAsBytes(
+//                    mapOf("enabled" to false)
+//                )
+//            )
+//            return
+        } else {
+            ctx.json(v.statusJson())
+//            ctx.contentType("application/json").result(json.writeValueAsBytes(v.statusJson()))
         }
-        ctx.contentType("application/json").result(json.writeValueAsBytes(v.statusJson()))
     }
 
     @Throws(Exception::class)
@@ -1036,29 +1042,39 @@ class HttpServer @JvmOverloads constructor(
         val v = vc()
         if (v == null || !v.isEnabled) {
             writeError(ctx, 503, "version control provider not enabled")
-            return
+        } else {
+            try {
+                val request = ctx.bodyAsClass(VcCommitRequest::class.java)
+                val response = v.commit(request.path.ifEmpty { null }, request.message).toResponseObj()
+                ctx.status(if (response.ok) 200 else 500).json(response)
+            } catch (e: Exception) {
+                writeError(ctx, 400, "invalid json body: $e")
+            }
         }
-        val body = readJsonBody(ctx)
-        if (body == null) {
-            writeError(ctx, 400, "invalid json body")
-            return
-        }
-        val message = str(body["message"])
-        if (message.isEmpty()) {
-            writeError(ctx, 400, "commit message must not be blank")
-            return
-        }
-        val path = if (body["path"] == null) null else str(body["path"])
+//        val body = readJsonBody(ctx)
+//        if (body == null) {
+//            writeError(ctx, 400, "invalid json body")
+//            return
+//        }
+//        val message = str(body["message"])
+//        if (message.isEmpty()) {
+//            writeError(ctx, 400, "commit message must not be blank")
+//            return
+//        }
+//        val path = if (body["path"] == null) null else str(body["path"])
+//
+//        val r = v.commit(path, message)
+//        val response = r.toResponseObj()
+//        val out = buildMap<String, Any> {
+//            put("ok", r.ok)
+//            put("exitCode", r.exitCode)
+//            put("stdout", r.stdout)
+//            put("stderr", r.stderr)
+//        }
 
-        val r = v.commit(path, message)
-        val out = buildMap<String, Any> {
-            put("ok", r.ok)
-            put("exitCode", r.exitCode)
-            put("stdout", r.stdout)
-            put("stderr", r.stderr)
-        }
-        ctx.status(if (r.ok) 200 else 500).contentType("application/json")
-            .result(json.writeValueAsBytes(out))
+//        ctx.status(if (r.ok) 200 else 500).json(response)
+//        ctx.status(if (r.ok) 200 else 500).contentType("application/json")
+//            .result(json.writeValueAsBytes(out))
     }
 
     @Throws(Exception::class)
@@ -1068,15 +1084,17 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 503, "version control provider not enabled")
             return
         }
-        val r = v.push()
-        val out = buildMap<String, Any> {
-            put("ok", r.ok)
-            put("exitCode", r.exitCode)
-            put("stdout", r.stdout)
-            put("stderr", r.stderr)
-        }
-        ctx.status(if (r.ok) 200 else 500).contentType("application/json")
-            .result(json.writeValueAsBytes(out))
+//        val r = v.push()
+        val response = v.push().toResponseObj()
+        ctx.status(if (response.ok) 200 else 500).json(response)
+//        val out = buildMap<String, Any> {
+//            put("ok", r.ok)
+//            put("exitCode", r.exitCode)
+//            put("stdout", r.stdout)
+//            put("stderr", r.stderr)
+//        }
+//        ctx.status(if (r.ok) 200 else 500).contentType("application/json")
+//            .result(json.writeValueAsBytes(out))
     }
 
     // --- Provenance failures ---
@@ -1087,62 +1105,86 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 503, "provenance provider not enabled")
             return
         }
-        var n = 50
-        val nStr = ctx.queryParam("n")
-        if (!nStr.isNullOrEmpty()) {
-            try {
-                n = nStr.toInt()
-            } catch (_: NumberFormatException) {
-                writeError(ctx, 400, "query param 'n' is not an integer: '$nStr'")
-                return
-            }
+//        var n = 50
+//        val nStr = ctx.queryParam("n")
+        val n = ctx.queryParam("n")?.toIntOrNull()
+        if (n == null) {
+            writeError(ctx, 400, "n must be a number")
+            return
         }
+
+//        if (!nStr.isNullOrEmpty()) {
+//            try {
+//                n = nStr.toInt()
+//            } catch (_: NumberFormatException) {
+//                writeError(ctx, 400, "query param 'n' is not an integer: '$nStr'")
+//                return
+//            }
+//        }
         // Over-fetch to give the filter a real chance of returning n
         // failures even when non-failure events dominate the ring buffer.
-        val window = max(n * 20, 500)
+//        val window = max(n * 20, 500)
+        val window = maxOf(n * 20, prov.capacity)
         val recent = prov.getRecent(window)
         val failures = recent.asSequence().filter { it.type == EventType.FAILED }.take(n).toList()
-        ctx.contentType("application/json").result(json.writeValueAsBytes(shape(failures)))
+        ctx.json(failures)
+//        ctx.contentType("application/json").result(json.writeValueAsBytes(failures))
     }
 
     // --- Processor config / connection updates ---
     @Throws(Exception::class)
     private fun handleUpdateProcessorConfig(ctx: Context) {
         val name = ctx.pathParam("name")
-        val body = readJsonBody(ctx)
-        if (body == null) {
-            writeError(ctx, 400, "invalid json body")
-            return
+        try {
+            val request = ctx.bodyAsClass(UpdateProcessorRequest::class.java)
+            val (type, config) = request
+            val response = pipeline.updateProcessorConfig(name, type, config)
+            writeEditResult(ctx, response, EditResultResponse("updated", name).toMap())
+        } catch (e: Exception) {
+            writeError(ctx, 400, "invalid json body: $e")
         }
-        val type: String? = if (body[ConfigLoader.TYPE_KEY] == null) null else str(body[ConfigLoader.TYPE_KEY])
-        val config = asStringMap(body[ConfigLoader.CONFIG_KEY])
-
-        val r = pipeline.updateProcessorConfig(name, type, config)
-        writeEditResult(ctx, r, mapOf("status" to "updated", "name" to name))
+//        val body = readJsonBody(ctx)
+//        if (body == null) {
+//            writeError(ctx, 400, "invalid json body")
+//            return
+//        }
+//        val type: String? = if (body[ConfigLoader.TYPE_KEY] == null) null else str(body[ConfigLoader.TYPE_KEY])
+//        val config = asStringMap(body[ConfigLoader.CONFIG_KEY])
+//
+//        val r = pipeline.updateProcessorConfig(name, type, config)
+//
+//        writeEditResult(ctx, r, mapOf("status" to "updated", "name" to name))
     }
 
-    // TODO: Process using data class
     @Throws(Exception::class)
     private fun handleSetProcessorConnections(ctx: Context) {
         val name = ctx.pathParam("name")
-        val body = readJsonBody(ctx)
-        if (body == null) {
-            writeError(ctx, 400, "invalid json body")
-            return
+        try {
+            val request = ctx.bodyAsClass(SetConnectionRequest::class.java)
+            val response = pipeline.setConnections(name, request.targets)
+            writeEditResult(ctx, response, ConnectionSetResponse("replaced", name, request.targets).toMap())
+        } catch (e: Exception) {
+            writeError(ctx, 400, "invalid json body: $e")
         }
-        val relationships = mutableMapOf<String, List<String>>()
-        for (entry in body.entries) {
-            if (entry.value is List<*>) {
-                val list = entry.value as List<String>
-                val targets = list.map { v -> str(v) }
-                relationships[entry.key] = targets
-            } else {
-                writeError(ctx, 400, "relationship '" + entry.key + "' must map to a list of target names")
-                return
-            }
-        }
-        val r = pipeline.setConnections(name, relationships)
-        writeEditResult(ctx, r, mapOf("status" to "replaced", "from" to name, "relationships" to relationships))
+
+//        val body = readJsonBody(ctx)
+//        if (body == null) {
+//            writeError(ctx, 400, "invalid json body")
+//            return
+//        }
+//        val relationships = mutableMapOf<String, List<String>>()
+//        for (entry in body.entries) {
+//            if (entry.value is List<*>) {
+//                val list = entry.value as List<String>
+//                val targets = list.map { v -> str(v) }
+//                relationships[entry.key] = targets
+//            } else {
+//                writeError(ctx, 400, "relationship '" + entry.key + "' must map to a list of target names")
+//                return
+//            }
+//        }
+//        val r = pipeline.setConnections(name, relationships)
+//        writeEditResult(ctx, r, mapOf("status" to "replaced", "from" to name, "relationships" to relationships))
     }
 
     // --- Identity ---
@@ -1173,7 +1215,7 @@ class HttpServer @JvmOverloads constructor(
         }
         log.info("flow saved to {}", configPath)
 
-        val body= buildMap {
+        val body = buildMap {
             put("status", "saved")
             put("path", configPath.toString())
             put("bytes", yaml?.length)
@@ -1214,7 +1256,8 @@ class HttpServer @JvmOverloads constructor(
         }
 
         PipelineMetrics.recordSave()
-        ctx.status(200).contentType("application/json").result(json.writeValueAsBytes(body))
+        ctx.json(body)
+//        ctx.status(200).contentType("application/json").result(json.writeValueAsBytes(body))
     }
 
     // --- Processor types (versioned registry) ---
@@ -1252,33 +1295,29 @@ class HttpServer @JvmOverloads constructor(
             writeError(ctx, 503, "overlay info unavailable — server started without a config loader")
             return
         }
-        val layers = mutableListOf<MutableMap<String, Any?>>()
-        for (layer in resolved.layers) {
-            val info = mutableMapOf<String, Any?>()
-            info["role"] = layer.role
-            info["path"] = layer.path?.toString()
-            info["present"] = layer.present
-            info["size"] = layer.content.size
-            layers.add(info)
+        val newLayers = resolved.layers.map { layer ->
+            ConfigLayer(layer.role, layer.path?.toString(), layer.present, layer.content.size)
         }
-        val body = mutableMapOf<String, Any?>()
-        body["base"] = resolved.basePath?.toString()
-        body["layers"] = layers
-        body["effective"] = resolved.effective
-        body["provenance"] = resolved.provenance
-        ctx.contentType("application/json").result(json.writeValueAsBytes(body))
+        val b = ConfigOverlayContainer(resolved.basePath?.toString(), newLayers, resolved.effective, resolved.provenance)
+        ctx.json(b)
+//        val layers = mutableListOf<MutableMap<String, Any?>>()
+//        for (layer in resolved.layers) {
+//            val info = mutableMapOf<String, Any?>()
+//            info["role"] = layer.role
+//            info["path"] = layer.path?.toString()
+//            info["present"] = layer.present
+//            info["size"] = layer.content.size
+//            layers.add(info)
+//        }
+//        val body = mutableMapOf<String, Any?>()
+//        body["base"] = resolved.basePath?.toString()
+//        body["layers"] = layers
+//        body["effective"] = resolved.effective
+//        body["provenance"] = resolved.provenance
+//        ctx.contentType("application/json").result(json.writeValueAsBytes(body))
     }
 
     // --- Plugins ---
-    @Volatile
-    private var currentPlugins: PluginLoader.Summary? = null
-
-    /** Full constructor — wires in the plugin summary and node identity
-     * so `/api/plugins` and `/api/identity` can answer. */
-    /** Constructor for the config-driven path — enables `/api/reload`. */
-    init {
-        this.plugins = plugins ?: PluginLoader.Summary.empty()
-    }
 
     private fun pluginSummary(): PluginLoader.Summary {
         return (if (currentPlugins != null) currentPlugins else plugins) ?: PluginLoader.Summary.empty()
@@ -1329,13 +1368,14 @@ class HttpServer @JvmOverloads constructor(
     @Throws(Exception::class)
     private fun writeStatus(ctx: Context, ok: Boolean, name: String, okStatus: String, failMessage: String) {
         val body = if (ok) {
-            mapOf("status" to okStatus, "name" to name)
+            StatusResponse.OKStatus(name, okStatus)
         } else {
-            mapOf("error" to failMessage, "name" to name)
+            StatusResponse.ErrorStatus(name, failMessage)
         }
-        ctx.status(if (ok) 200 else 404)
-            .contentType("application/json")
-            .result(json.writeValueAsBytes(body))
+        ctx.status(if(ok) 200 else 404).json(body)
+//        ctx.status(if (ok) 200 else 404)
+//            .contentType("application/json")
+//            .result(json.writeValueAsBytes(body))
     }
 
     @Throws(Exception::class)
@@ -1374,28 +1414,31 @@ class HttpServer @JvmOverloads constructor(
     companion object {
         private val log: Logger = LoggerFactory.getLogger(HttpServer::class.java)
 
-        private fun shape(events: List<ProvenanceProvider.Event>): List<Map<String, Any>> {
-            return events.map { e -> mapOf<String, Any>(
-                    "flowFileId" to e.flowFileId,
-                    "type" to e.type!!.name,
-                    "component" to (e.component ?: ""),
-                    "details" to (e.details ?: ""),
-                    "timestampMillis" to e.timestampMillis
-                )
-            }
-        }
+        val pipelineKey = Key<Pipeline>("pipeline")
 
-        private fun typeInfoToJson(info: Registry.TypeInfo): Map<String, Any> {
+//        private fun shape(events: List<ProvenanceProvider.Event>): List<Map<String, Any>> {
+//            return events.map { e -> mapOf<String, Any>(
+//                    "flowFileId" to e.flowFileId,
+//                    "type" to e.type!!.name,
+//                    "component" to (e.component ?: ""),
+//                    "details" to (e.details ?: ""),
+//                    "timestampMillis" to e.timestampMillis
+//                )
+//            }
+//        }
+
+        private fun typeInfoToJson(info: ProcessorRegistry.TypeInfo): Map<String, Any> {
             return buildMap {
                 put("name", info.name)
                 put("version", info.version)
-                put("description", info.description ?: "")
-                put("category", info.category ?: "Other")
+                put("description", info.description)
+                put("category", info.category)
                 put("configKeys", info.configKeys)
                 put("relationships", info.relationships)
                 put("parameters", info.parameters.map { it.asMap() })
             }
         }
+
         private fun str(o: Any?): String {
             return o?.toString() ?: ""
         }

@@ -29,7 +29,7 @@ final class HotReloadDiffTest {
 
     @Test
     void unchangedReloadReusesProcessorsAndReportsZeroDiff() {
-        var loader = new ConfigLoader(new Registry());
+        var loader = new ConfigLoader(new ProcessorRegistry());
         var first = loader.load(BASE_YAML);
         var pipeline = new Pipeline(first);
 
@@ -44,7 +44,7 @@ final class HotReloadDiffTest {
 
     @Test
     void updatedConfigRebuildsProcessor() {
-        var loader = new ConfigLoader(new Registry());
+        var loader = new ConfigLoader(new ProcessorRegistry());
         var first = loader.load(BASE_YAML);
         var pipeline = new Pipeline(first);
 
@@ -62,7 +62,7 @@ final class HotReloadDiffTest {
 
     @Test
     void addedAndRemovedProcessorsCount() {
-        var loader = new ConfigLoader(new Registry());
+        var loader = new ConfigLoader(new ProcessorRegistry());
         var first = loader.load(BASE_YAML);
         var pipeline = new Pipeline(first);
 
@@ -91,7 +91,7 @@ final class HotReloadDiffTest {
 
     @Test
     void connectionChangeWithoutProcessorChangeIsItsOwnCategory() {
-        var loader = new ConfigLoader(new Registry());
+        var loader = new ConfigLoader(new ProcessorRegistry());
         var first = loader.load(BASE_YAML);
         var pipeline = new Pipeline(first);
 

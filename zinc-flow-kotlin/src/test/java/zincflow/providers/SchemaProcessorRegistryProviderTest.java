@@ -5,7 +5,7 @@ import zincflow.core.ComponentState;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-final class SchemaRegistryProviderTest {
+final class SchemaProcessorRegistryProviderTest {
 
     @Test
     void registerBumpsVersionPerSubject() {

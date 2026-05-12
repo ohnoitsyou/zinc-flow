@@ -4,7 +4,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Holds the set of providers available to processors and tracks which
  * processors depend on which providers (for cascade-disable). One
- * context per Fabric instance; passed to [zincflow.fabric.Registry]
+ * context per Fabric instance; passed to [zincflow.fabric.ProcessorRegistry]
  * factories so processors can wire the providers they need at
  * construction time. */
 class ProcessorContext {

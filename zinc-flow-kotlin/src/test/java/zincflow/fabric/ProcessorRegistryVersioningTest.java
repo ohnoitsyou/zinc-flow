@@ -10,7 +10,7 @@ import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-final class RegistryVersioningTest {
+final class ProcessorRegistryVersioningTest {
 
     private static Processor noop() {
         return ff -> new ProcessorResult.Dropped();
@@ -18,7 +18,7 @@ final class RegistryVersioningTest {
 
     @Test
     void defaultRegisterAssignsDefaultVersion() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         r.register("Toy", (cfg, ctx) -> noop());
         assertTrue(r.has("Toy"));
         assertTrue(r.has("Toy@" + TypeRefs.DEFAULT_VERSION));
@@ -27,7 +27,7 @@ final class RegistryVersioningTest {
 
     @Test
     void multipleVersionsCoexistAndLatestWins() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         r.register("Toy", "1.0.0", (cfg, ctx) -> noop());
         r.register("Toy", "1.2.0", (cfg, ctx) -> noop());
         r.register("Toy", "1.1.5", (cfg, ctx) -> noop());
@@ -42,7 +42,7 @@ final class RegistryVersioningTest {
 
     @Test
     void unknownTypeAndVersionRejected() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         r.register("Toy", "1.0.0", (cfg, ctx) -> noop());
         assertThrows(IllegalArgumentException.class, () -> r.create("Missing", Map.of()));
         assertThrows(IllegalArgumentException.class, () -> r.create("Toy@9.9.9", Map.of()));
@@ -50,14 +50,14 @@ final class RegistryVersioningTest {
 
     @Test
     void listAllSortsByNameThenAscendingVersion() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         r.register("Beta", "2.0.0", (cfg, ctx) -> noop());
         r.register("Alpha", "1.5.0", (cfg, ctx) -> noop());
         r.register("Alpha", "1.0.0", (cfg, ctx) -> noop());
 
-        List<Registry.TypeInfo> all = r.listAll();
+        List<ProcessorRegistry.TypeInfo> all = r.listAll();
         // Built-ins are present too — filter.
-        List<Registry.TypeInfo> ours = all.stream()
+        List<ProcessorRegistry.TypeInfo> ours = all.stream()
                 .filter(t -> t.getName().equals("Alpha") || t.getName().equals("Beta"))
                 .toList();
         assertEquals("Alpha", ours.get(0).getName());
@@ -69,10 +69,10 @@ final class RegistryVersioningTest {
 
     @Test
     void listVersionsPerType() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         r.register("Toy", "1.0.0", (cfg, ctx) -> noop());
         r.register("Toy", "2.0.0", (cfg, ctx) -> noop());
-        List<Registry.TypeInfo> versions = r.listVersions("Toy");
+        List<ProcessorRegistry.TypeInfo> versions = r.listVersions("Toy");
         assertEquals(2, versions.size());
         assertEquals("1.0.0", versions.get(0).getVersion());
         assertEquals("2.0.0", versions.get(1).getVersion());
@@ -89,7 +89,7 @@ final class RegistryVersioningTest {
 
     @Test
     void versionedConfigTypeParsesThroughConfigLoader() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         r.register("Toy", "1.0.0", (cfg, ctx) -> noop());
         r.register("Toy", "2.0.0", (cfg, ctx) -> noop());
         var loader = new ConfigLoader(r);
@@ -106,7 +106,7 @@ final class RegistryVersioningTest {
 
     @Test
     void configWithUnknownVersionFailsCleanly() {
-        var r = new Registry();
+        var r = new ProcessorRegistry();
         r.register("Toy", "1.0.0", (cfg, ctx) -> noop());
         var loader = new ConfigLoader(r);
         assertThrows(IllegalArgumentException.class, () -> loader.load("""

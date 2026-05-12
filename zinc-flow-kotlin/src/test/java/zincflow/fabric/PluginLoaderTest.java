@@ -1,7 +1,6 @@
 package zincflow.fabric;
 
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -32,7 +31,7 @@ final class PluginLoaderTest {
     /// {@link FixtureProcessorPlugin} and {@link FixtureProviderPlugin}.
     @Test
     void discoversPluginsOnTestClasspath() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var ctx = new ProcessorContext();
         var summary = PluginLoader.load(getClass().getClassLoader(), registry, ctx);
 
@@ -61,7 +60,7 @@ final class PluginLoaderTest {
                         "META-INF/services/zincflow.core.ProviderPlugin",
                         "zincflow.fabric.PluginLoaderTest$DropInProviderPlugin\n"));
 
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var ctx = new ProcessorContext();
         var summary = PluginLoader.loadFromDirectory(pluginsDir, registry, ctx);
 
@@ -79,7 +78,7 @@ final class PluginLoaderTest {
     @Test
     void missingDirectoryYieldsEmptySummary(@TempDir Path tempDir) {
         Path missing = tempDir.resolve("nope");
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var ctx = new ProcessorContext();
         var summary = PluginLoader.loadFromDirectory(missing, registry, ctx);
         assertEquals(0, summary.totalLoaded());
@@ -89,13 +88,13 @@ final class PluginLoaderTest {
     @Test
     void emptyDirectoryYieldsEmptySummary(@TempDir Path tempDir) throws Exception {
         Path empty = Files.createDirectory(tempDir.resolve("empty"));
-        var summary = PluginLoader.loadFromDirectory(empty, new Registry(), new ProcessorContext());
+        var summary = PluginLoader.loadFromDirectory(empty, new ProcessorRegistry(), new ProcessorContext());
         assertEquals(0, summary.totalLoaded());
     }
 
     @Test
     void nullClassLoaderReturnsNoPlugins() {
-        var registry = new Registry();
+        var registry = new ProcessorRegistry();
         var ctx = new ProcessorContext();
         // ClassLoader.getSystemClassLoader() won't have the test resources
         // (they live on the test classpath). Use it to prove the scan is

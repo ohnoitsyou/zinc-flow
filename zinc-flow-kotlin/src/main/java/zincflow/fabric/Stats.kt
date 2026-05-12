@@ -87,6 +87,10 @@ class Stats @JvmOverloads constructor(metrics: Metrics? = null) {
         )
     }
 
+    fun snapshotObj(): MetricSnapshot {
+        return MetricSnapshot(totalIngested.get(), totalProcessed.get(), totalDropped.get(), totalFailed.get(), mapSnapshot(processorCounts,), mapSnapshot(processorErrors))
+    }
+
     companion object {
         private fun mapSnapshot(src: ConcurrentHashMap<String, AtomicLong>): Map<String, Long> {
             return src.entries.associate { (k: String, v: AtomicLong) -> k to v.get() }

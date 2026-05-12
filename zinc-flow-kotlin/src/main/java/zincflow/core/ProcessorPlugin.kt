@@ -4,7 +4,7 @@ package zincflow.core
  * with a `META-INF/services/zincflow.core.ProcessorPlugin` entry
  * listing fully qualified class names, and the zinc-flow-java
  * [zincflow.fabric.PluginLoader] registers each one under its
- * [.type] with the [zincflow.fabric.Registry].
+ * [.type] with the [zincflow.fabric.ProcessorRegistry].
  * 
  * Implementations must have a public no-arg constructor —
  * [java.util.ServiceLoader] requires it. The [.create]
