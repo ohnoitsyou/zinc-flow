@@ -519,16 +519,16 @@ class ProcessorRegistry {
         @Deprecated("use {@link TypeRefs#DEFAULT_VERSION}. ")
         const val DEFAULT_VERSION: String = TypeRefs.DEFAULT_VERSION
 
-        @JvmStatic
-        @Deprecated("use {@link TypeRefs#compareVersions(String, String)}. ")
-        fun compareVersions(a: String, b: String): Int {
-            return TypeRefs.compareVersions(a, b)
-        }
+//        @JvmStatic
+//        @Deprecated("use {@link TypeRefs#compareVersions(String, String)}. ")
+//        fun compareVersions(a: String, b: String): Int {
+//            return TypeRefs.compareVersions(a, b)
+//        }
 
-        @Deprecated("use {@link TypeRefs.TypeRef}. ")
-        fun parseTypeRef(raw: String?): TypeRefs.TypeRef {
-            return TypeRefs.TypeRef.parse(raw)
-        }
+//        @Deprecated("use {@link TypeRefs.TypeRef}. ")
+//        fun parseTypeRef(raw: String?): TypeRefs.TypeRef {
+//            return TypeRefs.TypeRef.parse(raw)
+//        }
 
         /** Return the content store exposed by the `"content"`
          * provider, or null when no such provider is wired. Processors that

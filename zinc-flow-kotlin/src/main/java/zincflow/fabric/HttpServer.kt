@@ -19,6 +19,7 @@ import zincflow.core.FlowFile
 import zincflow.core.JsonMapper
 import zincflow.core.YamlMapper
 import zincflow.fabric.Pipeline.EditResult
+import zincflow.fabric.PluginLoader.Summary
 import zincflow.fabric.PluginLoader.loadFromDirectory
 import zincflow.fabric.VcCommandResponse.Companion.toResponseObj
 import zincflow.providers.ProvenanceProvider.EventType
@@ -60,26 +61,24 @@ class HttpServer @JvmOverloads constructor(
     private val pipeline: Pipeline,
     private val loader: ConfigLoader? = null,
     private val configPath: Path? = null,
-    private var plugins: PluginLoader.Summary? = null,
+    private val plugins: Summary,
     private val pluginsDir: Path? = null,
     private val identity: NodeIdentity? = null,
     private val json: ObjectMapper = JsonMapper.mapper,
     private val yaml: ObjectMapper = YamlMapper.mapper,
 ) {
-    //    private val plugins: PluginLoader.Summary
     private val app: Javalin
 
     @Volatile
     private var boundPort = -1
 
     @Volatile
-    private var currentPlugins: PluginLoader.Summary? = null
+    private var currentPlugins: Summary = plugins
 
     /** Full constructor — wires in the plugin summary and node identity
      * so `/api/plugins` and `/api/identity` can answer. */
     /** Constructor for the config-driven path — enables `/api/reload`. */
     init {
-        this.plugins = plugins ?: PluginLoader.Summary.empty()
         app = Javalin.create { cfg: JavalinConfig ->
             // Virtual-thread handoff for HTTP requests. Jetty's
             // QueuedThreadPool keeps a small platform-thread pool
@@ -182,12 +181,11 @@ class HttpServer @JvmOverloads constructor(
 //        app = null
         boundPort = -1
 
-        // Release plugin classloaders (both the reload-replaced current
-        // one and the startup-supplied one). Safe if either is null.
-        currentPlugins?.close()
-        currentPlugins = null
+        // Release plugin classloaders (both the reload-replaced current one and the startup-supplied one).
+        currentPlugins.close()
+        currentPlugins = Summary.empty()
 
-        plugins?.close()
+        plugins.close()
     }
 
     // --- Handlers ---
@@ -1345,10 +1343,11 @@ class HttpServer @JvmOverloads constructor(
         // and exhaust file handles over time.
         val prior = currentPlugins
         currentPlugins = loadFromDirectory(pluginsDir, pipeline.registry(), pipeline.context())
-        prior?.close()
-        log.info("reloaded plugins from {} — {} loaded", pluginsDir, currentPlugins!!.totalLoaded())
-        ctx.contentType("application/json")
-            .result(json.writeValueAsBytes(PluginLoader.toJson(currentPlugins!!)))
+        prior.close()
+        log.info("reloaded plugins from {} — {} loaded", pluginsDir, currentPlugins.totalLoaded)
+        ctx.json(PluginLoader.toJson(currentPlugins))
+//        ctx.contentType("application/json")
+//            .result(json.writeValueAsBytes(PluginLoader.toJson(currentPlugins)))
     }
 
     // --- Body + response helpers ---

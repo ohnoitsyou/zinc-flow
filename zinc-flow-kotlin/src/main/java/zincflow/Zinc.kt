@@ -29,6 +29,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.io.path.isRegularFile
 import kotlin.system.exitProcess
 
 /** Entry point. Loads a config.yaml if one is present (arg 1 or
@@ -82,6 +83,10 @@ object Zinc {
         }
 
         val configPath = resolveConfigPath(args)
+        if (configPath == null) {
+            log.info("Unable to resolve config and unable to create new file")
+            exitProcess(1)
+        }
         val processorRegistry = ProcessorRegistry()
         val sourceRegistry = SourceRegistry()
         val providerRegistry = ProviderRegistry()
@@ -107,10 +112,10 @@ object Zinc {
         val plugins = PluginLoader.loadFromDirectory(
             pluginsDir, processorRegistry, context, sourceRegistry
         )
-        if (plugins.totalLoaded() > 0) {
+        if (plugins.totalLoaded > 0) {
             log.info(
                 "loaded {} plugin(s) from {} — providers: {}, processors: {}, sources: {}",
-                plugins.totalLoaded(), pluginsDir, plugins.providerNames,
+                plugins.totalLoaded, pluginsDir, plugins.providerNames,
                 plugins.processorTypes, plugins.sourceTypes
             )
         }
@@ -222,7 +227,7 @@ object Zinc {
     private fun registerBootstrapProviders(
         providerRegistry: ProviderRegistry,
         identityRef: AtomicReference<NodeIdentity>,
-        configPath: Path?
+        configPath: Path
     ) {
         providerRegistry.register(
             ProviderRegistry.TypeInfo(
@@ -231,9 +236,8 @@ object Zinc {
                 "Self-registers this worker with a central UI via periodic heartbeat.",
                 mutableListOf(CFG_UI_REGISTER)
             )) { cfg: Map<String, Any> ->
-                val target = cfg[CFG_UI_REGISTER]
-                if (target == null || target.toString().isEmpty()) return@register null
-                UIRegistrationProvider(target.toString(), { identityRef.get().toMap(resolvePort()) })
+                val target = cfg[CFG_UI_REGISTER]?.toString().takeUnless { it is String && it.isEmpty() } ?: return@register null
+                UIRegistrationProvider(target, { identityRef.get().toMap(resolvePort()) })
             }
 
         providerRegistry.register(
@@ -243,19 +247,21 @@ object Zinc {
                 mutableListOf(CFG_VC_ENABLED, CFG_VC_REPO, CFG_VC_GIT, CFG_VC_REMOTE, CFG_VC_BRANCH)
             )) { cfg: Map<String, Any> ->
                 val enabled = cfg[CFG_VC_ENABLED]
-                val on = enabled as? Boolean ?: enabled.toString().toBoolean()
-                if (!on) return@register null
-                val repo = if (cfg.containsKey(CFG_VC_REPO)) {
-                    Path.of(cfg[CFG_VC_REPO].toString())
+                if (enabled as? Boolean ?: enabled.toString().toBoolean()) {
+                    val repo = if (cfg.containsKey(CFG_VC_REPO)) {
+                        Path.of(cfg[CFG_VC_REPO].toString())
+                    } else {
+                        configPath.toAbsolutePath().parent
+                    }
+                    VersionControlProvider(
+                        repo,
+                        cfg.getOrDefault(CFG_VC_GIT, "git").toString(),
+                        cfg.getOrDefault(CFG_VC_REMOTE, "origin").toString(),
+                        cfg.getOrDefault(CFG_VC_BRANCH, "main").toString()
+                    )
                 } else {
-                    if (configPath == null) Path.of(".") else configPath.toAbsolutePath().parent
+                    return@register null
                 }
-                VersionControlProvider(
-                    repo,
-                    cfg.getOrDefault(CFG_VC_GIT, "git").toString(),
-                    cfg.getOrDefault(CFG_VC_REMOTE, "origin").toString(),
-                    cfg.getOrDefault(CFG_VC_BRANCH, "main").toString()
-                )
             }
     }
 
@@ -275,14 +281,20 @@ object Zinc {
                 VersionControlProvider.TYPE if (effective[CFG_VC] is Map<*, *>) -> effective[CFG_VC] as Map<String, Any>
                 else -> mapOf()
             }
-            providerRegistry.create(info.qualifiedName(), cfg)
+            providerRegistry.create(info.qualifiedName, cfg)
         }
     }
 
     private fun resolveConfigPath(args: Array<String>): Path? {
         if (args.isNotEmpty()) return Path.of(args[0])
         val defaultPath = Path.of("config.yaml")
-        return if (Files.isRegularFile(defaultPath)) defaultPath else null
+        return if (Files.isRegularFile(defaultPath)) {
+            defaultPath
+        } else if(defaultPath.toFile().createNewFile()) {
+            defaultPath
+        } else {
+            null
+        }
     }
 
     /** Pick the plugins directory — `$ZINCFLOW_PLUGINS_DIR` when

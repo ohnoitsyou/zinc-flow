@@ -1,8 +1,10 @@
 package zincflow.fabric
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.yaml.snakeyaml.Yaml
+import zincflow.core.YamlMapper
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -35,6 +37,8 @@ object ConfigOverlay {
     const val ENV_LOCAL: String = "ZINCFLOW_CONFIG_LOCAL"
     const val ENV_SECRETS: String = "ZINCFLOW_SECRETS_PATH"
 
+    val yamlMapper: ObjectMapper = YamlMapper.mapper
+
     /** Explicit paths — used by tests and the admin API's
      * `PUT /api/overlays/secrets` write-through path. */
     /** Default behaviour — env vars first, sibling files as fallback. */
@@ -42,9 +46,9 @@ object ConfigOverlay {
     @JvmOverloads
     @Throws(IOException::class)
     fun load(
-        basePath: Path?,
-        localPath: Path? = resolveLocalPath(basePath),
-        secretsPath: Path? = resolveSecretsPath(basePath)
+        basePath: Path,
+        localPath: Path? = resolvePath(basePath, ENV_LOCAL, DEFAULT_LOCAL_NAME),
+        secretsPath: Path? = resolvePath(basePath, ENV_SECRETS, DEFAULT_SECRETS_NAME)
     ): Resolved {
         val base = readLayer("base", basePath)
         val local = readLayer("local", localPath)
@@ -52,28 +56,21 @@ object ConfigOverlay {
 
         val effective = mutableMapOf<String, Any>()
         val provenance = mutableMapOf<String, String>()
+
         merge(effective, provenance, base.content, base.role, "")
         merge(effective, provenance, local.content, local.role, "")
         merge(effective, provenance, secrets.content, secrets.role, "")
+
         return Resolved(basePath, mutableListOf(base, local, secrets), effective, provenance)
     }
 
-    fun resolveLocalPath(basePath: Path?): Path {
-        val envOverride = System.getenv(ENV_LOCAL)
-        if (envOverride != null && !envOverride.isEmpty()) return Path.of(envOverride)
-        return if (basePath == null)
-            Path.of(DEFAULT_LOCAL_NAME)
-        else
-            basePath.toAbsolutePath().parent.resolve(DEFAULT_LOCAL_NAME)
-    }
-
-    fun resolveSecretsPath(basePath: Path?): Path {
-        val envOverride = System.getenv(ENV_SECRETS)
-        if (envOverride != null && !envOverride.isEmpty()) return Path.of(envOverride)
-        return if (basePath == null)
-            Path.of(DEFAULT_SECRETS_NAME)
-        else
-            basePath.toAbsolutePath().parent.resolve(DEFAULT_SECRETS_NAME)
+    fun resolvePath(basePath: Path?, environmentKey: String, defaultKey: String) : Path {
+        val envOverride = System.getenv(environmentKey)
+        return when {
+            envOverride != null && envOverride.isNotEmpty() -> Path.of(envOverride)
+            basePath == null -> Path.of(defaultKey)
+            else -> basePath.toAbsolutePath().parent.resolve(defaultKey)
+        }
     }
 
     // I think this might be the root of the yaml parsing.
@@ -84,9 +81,16 @@ object ConfigOverlay {
         }
         val yaml = Files.readString(path)
         if (yaml.isBlank()) return Layer(role, path, true, mapOf())
-        val parsed = Yaml().load<Any?>(yaml) ?: return Layer(role, path, true, mutableMapOf())
-        require(parsed is Map<*, *>) { "overlay '$role' ($path) must be a YAML map, got ${parsed.javaClass.getSimpleName()}" }
-        return Layer(role, path, true, normalizeKeys(parsed as Map<Any, Any>))
+
+        val parsedYaml = yamlMapper.readValue(yaml, Map::class.java)
+        val processedYaml = if (parsedYaml is Map<*, *>) {
+            parsedYaml.entries.associate { (k, v) -> k as String to v as Any }
+        } else { emptyMap() }
+
+        return Layer(role, path, true, processedYaml)
+//        val parsed = Yaml().load<Any?>(yaml) ?: return Layer(role, path, true, mutableMapOf())
+//        require(parsed is Map<*, *>) { "overlay '$role' ($path) must be a YAML map, got ${parsed.javaClass.getSimpleName()}" }
+//        return Layer(role, path, true, normalizeKeys(parsed as Map<Any, Any>))
     }
 
     /** Recursive deep-merge: `src` onto `dst` with

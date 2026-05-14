@@ -90,7 +90,7 @@ class ConfigLoader @JvmOverloads constructor(
     }
 
     @Throws(IOException::class)
-    fun loadFromFile(path: Path?): PipelineGraph {
+    fun loadFromFile(path: Path): PipelineGraph {
         val resolved: Resolved = load(path)
         return loadFromOverlay(resolved)
     }
@@ -249,7 +249,7 @@ class ConfigLoader @JvmOverloads constructor(
 //            Collections.unmodifiableMap<kotlin.String?, Processor?>(LinkedHashMap<kotlin.String?, Processor?>(processors))
 
         log.info("Building sources")
-        lastSources = buildSources(effective["sources"])
+        lastSources = buildSources(effective["sources"] as? Map<String, Any> ?: emptyMap())
         log.info("Sources complete")
 
         log.info("Loading providers")
@@ -325,22 +325,23 @@ class ConfigLoader @JvmOverloads constructor(
      * 
      * A null source returned by a factory (e.g. GetFile without
      * inputDir) is treated as "disabled" — logged, not thrown. */
-    private fun buildSources(sourcesRaw: Any?): MutableList<Source> {
+    private fun buildSources(sourcesRaw: Map<String, Any>): MutableList<Source> {
         log.info("Starting build sources")
-        log.info(sourcesRaw.toString())
         if (sourceRegistry == null) {
-            log.warn("sources block present but no SourceRegistry wired — sources ignored")
+            log.warn("Source Registry not configured — sources ignored")
             return mutableListOf()
         }
 
-        if (sourcesRaw == null) return mutableListOf()
-        require(sourcesRaw is Map<*, *>) { "config: 'sources' must be a map of name → {type, config}" }
+        if (sourcesRaw.isEmpty()) return mutableListOf()
+//        require(sourcesRaw is Map<*, *>) { "config: 'sources' must be a map of name → {type, config}" }
         log.info("Processing sources: ${sourcesRaw.entries.size}")
 
         val out: MutableList<Source> = mutableListOf()
+        sourcesRaw.entries.map {
+        }
         for (entry in sourcesRaw.entries) {
             log.info("Source: ${entry.key}")
-            val name: String = entry.key.toString()
+            val name: String = entry.key
             val sourceRoot = entry.value
             require(sourceRoot is Map<*, *>) { "config: sources: section for '$name' did not parse as Map" }
 

@@ -50,7 +50,7 @@ class SourceRegistry {
         if (type.isEmpty()) return null
         if (type.contains("@")) return (if (versioned.containsKey(type)) type else null)
         val latest = latestVersion[type]
-        return (if (latest == null) null else TypeRefs.qualify(type, latest))
+        return if (latest == null) null else TypeRefs.qualify(type, latest)
     }
 
     fun create(type: String, name: String, config: MutableMap<String, Any>): Source? {

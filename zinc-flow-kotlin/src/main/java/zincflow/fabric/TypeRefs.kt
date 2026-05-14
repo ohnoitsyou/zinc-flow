@@ -35,8 +35,8 @@ object TypeRefs {
     /** Parsed form of a config `type:` string — either bare
      * (`"Foo"`, meaning "latest") or pinned (`"Foo@1.2.3"`). */
     @JvmRecord
-    data class TypeRef(val name: String?, val version: String?) {
-        fun raw(): String? {
+    data class TypeRef(val name: String, val version: String?) {
+        fun raw(): String {
             return if (version == null) name else "$name@$version"
         }
 

@@ -34,8 +34,12 @@ sealed interface ProcessorResult {
     data class Routed private constructor(val route: String, val flowFile: FlowFile) : ProcessorResult {
         companion object {
             operator fun invoke(route: String, flowFile: FlowFile): Routed {
-                return Routed(route, FlowFile(flowFile.id, flowFile.attributes, flowFile.content,
-                    flowFile.timestampMillis, flowFile.hopCount))
+                return Routed(
+                    route, FlowFile(
+                        flowFile.id, flowFile.attributes, flowFile.content,
+                        flowFile.timestampMillis, flowFile.hopCount
+                    )
+                )
             }
         }
     }
@@ -52,14 +56,18 @@ sealed interface ProcessorResult {
         }
     }
 
-    class Dropped : ProcessorResult { }
+    class Dropped : ProcessorResult {}
 
     @ConsistentCopyVisibility
     data class Failure private constructor(val reason: String, val flowFile: FlowFile) : ProcessorResult {
         companion object {
             operator fun invoke(reason: String, flowFile: FlowFile): Failure {
-                return Failure(reason, FlowFile(flowFile.id, flowFile.attributes, flowFile.content,
-                    flowFile.timestampMillis, flowFile.hopCount))
+                return Failure(
+                    reason, FlowFile(
+                        flowFile.id, flowFile.attributes, flowFile.content,
+                        flowFile.timestampMillis, flowFile.hopCount
+                    )
+                )
             }
         }
     }

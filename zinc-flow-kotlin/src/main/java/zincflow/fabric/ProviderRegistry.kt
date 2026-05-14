@@ -25,9 +25,7 @@ class ProviderRegistry {
         val description: String,
         val configKeys: List<String>
     ) {
-        fun qualifiedName(): String {
-            return TypeRefs.qualify(name, version)
-        }
+        val qualifiedName = TypeRefs.qualify(name, version)
     }
 
     private val versioned = ConcurrentHashMap<String, Factory>()
@@ -35,14 +33,14 @@ class ProviderRegistry {
     private val metadata = ConcurrentHashMap<String, TypeInfo>()
 
     fun register(info: TypeInfo, factory: Factory) {
-        val key = info.qualifiedName()
+        val key = info.qualifiedName
         versioned[key] = factory
         metadata[key] = info
         latestVersion.merge(info.name, info.version) { oldV: String, newV: String -> if (TypeRefs.compareVersions(oldV, newV) >= 0) oldV else newV }
     }
 
     fun register(type: String, factory: Factory) {
-        register(TypeInfo(type, TypeRefs.DEFAULT_VERSION, "", mutableListOf()), factory)
+        register(TypeInfo(type, TypeRefs.DEFAULT_VERSION, "", listOf()), factory)
     }
 
     fun has(type: String): Boolean {
@@ -53,7 +51,7 @@ class ProviderRegistry {
         if (type.isEmpty()) return null
         if (type.contains("@")) return (if (versioned.containsKey(type)) type else null)
         val latest = latestVersion[type]
-        return (if (latest == null) null else TypeRefs.qualify(type, latest))
+        return if (latest == null) null else TypeRefs.qualify(type, latest)
     }
 
     fun create(type: String, config: Map<String, Any>): Provider? {

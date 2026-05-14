@@ -12,6 +12,7 @@ import java.net.URLClassLoader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.ServiceLoader
+import kotlin.io.path.extension
 
 /** Discovers [ProcessorPlugin] and [ProviderPlugin]
  * services on a given [ClassLoader] and wires them into a
@@ -60,20 +61,23 @@ object PluginLoader {
     @JvmStatic
     @JvmOverloads
     fun loadFromDirectory(
-        dir: Path?, processorRegistry: ProcessorRegistry, context: ProcessorContext,
+        dir: Path,
+        processorRegistry: ProcessorRegistry,
+        context: ProcessorContext,
         sourceRegistry: SourceRegistry? = null
     ): Summary {
-        if (dir == null || !Files.isDirectory(dir)) {
-            return Summary(listOf(), listOf(), listOf(), dir, listOf(), null)
+        if (!Files.isDirectory(dir)) {
+            log.warn("Path '$dir' is not a directory")
+            return Summary.empty()
         }
         val jars = try {
             Files.list(dir).use { entries ->
                 entries
-                    .filter { it.fileName.toString().endsWith(".jar") }
+                    .filter { it.fileName.extension == "jar" }
                     .sorted().toList()
             }
         } catch (ex: IOException) {
-            log.warn("plugin directory scan failed: {} — {}", dir, ex.toString())
+            log.warn("Plugin directory scan failed: {} — {}", dir, ex.toString())
             return Summary(listOf(), listOf(), listOf(), dir, listOf(), null)
         }
         if (jars.isEmpty()) {
@@ -210,7 +214,7 @@ object PluginLoader {
             put("processorTypes", s.processorTypes)
             put("providerNames", s.providerNames)
             put("sourceTypes", s.sourceTypes)
-            put("totalLoaded", s.totalLoaded())
+            put("totalLoaded", s.totalLoaded)
         }
     }
 
@@ -227,9 +231,7 @@ object PluginLoader {
         val jars: List<Path>?,
         val classLoader: URLClassLoader?
     ) : AutoCloseable {
-        fun totalLoaded(): Int {
-            return processorTypes.size + providerNames.size + sourceTypes.size
-        }
+        val totalLoaded = processorTypes.size + providerNames.size + sourceTypes.size
 
         /** Release the [URLClassLoader] — best effort. Safe to call
          * on an [.empty] summary. */

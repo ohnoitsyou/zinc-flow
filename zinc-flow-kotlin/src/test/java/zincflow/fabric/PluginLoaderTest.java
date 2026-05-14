@@ -81,7 +81,7 @@ final class PluginLoaderTest {
         var registry = new ProcessorRegistry();
         var ctx = new ProcessorContext();
         var summary = PluginLoader.loadFromDirectory(missing, registry, ctx);
-        assertEquals(0, summary.totalLoaded());
+        assertEquals(0, summary.getTotalLoaded());
         assertEquals(0, Objects.requireNonNull(summary.getJars()).size());
     }
 
@@ -89,7 +89,7 @@ final class PluginLoaderTest {
     void emptyDirectoryYieldsEmptySummary(@TempDir Path tempDir) throws Exception {
         Path empty = Files.createDirectory(tempDir.resolve("empty"));
         var summary = PluginLoader.loadFromDirectory(empty, new ProcessorRegistry(), new ProcessorContext());
-        assertEquals(0, summary.totalLoaded());
+        assertEquals(0, summary.getTotalLoaded());
     }
 
     @Test

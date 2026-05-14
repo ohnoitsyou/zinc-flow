@@ -8,12 +8,12 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
 object JsonMapper {
     @JvmStatic
-    val mapper = jacksonObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+    val mapper: ObjectMapper = jacksonObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 }
 
 object YamlMapper {
     @JvmStatic
-    val mapper = ObjectMapper(
+    val mapper: ObjectMapper = ObjectMapper(
         YAMLFactory.builder().configure(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION, true).build()
     ).findAndRegisterModules()
 }
