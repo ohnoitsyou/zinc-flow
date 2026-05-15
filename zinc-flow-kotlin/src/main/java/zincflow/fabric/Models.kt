@@ -134,3 +134,17 @@ data class RemoveConnectionRequest(val from: String, val relationship: String, v
 data class SetEntrypointRequest(val names: List<String>)
 
 data class VcPushRequest(val message: String?, val push: Boolean = true)
+
+data class ConfigSourceSpec @JsonCreator(mode = JsonCreator.Mode.DELEGATING) constructor(val spec: Map<String, ConfigSpec>)
+data class ConfigSpec(val type: String, val config: Map<String, String>)
+
+data class ConfigurationRoot(val flow: RootConfig)
+data class RootConfig(
+    val entryPoints: List<String> = listOf(),
+    val processors: Map<String, ConfigProcessorSpec> = mapOf(),
+    val connections: Map<String, ConfigRelationship> = mapOf(),
+    val sources: Map<String, SourceSpec> = mapOf()
+)
+data class SourceSpec(val type: String, val config: Map<String, Any> = mapOf())
+data class ConfigRelationship @JsonCreator(mode = JsonCreator.Mode.DELEGATING) constructor(val relationships: Map<String, List<String>>)
+data class ConfigProcessorSpec(val type: String, val config: Map<String, Any> = mapOf())

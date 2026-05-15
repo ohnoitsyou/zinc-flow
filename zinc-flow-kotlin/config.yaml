@@ -48,4 +48,9 @@ flow:
     LogAttribute:
       success:
       - sink
-sources: { }
+  sources:
+    genFlow:
+      type: GenerateFlowFile
+      config:
+        content: "Hello World!"
+        pollIntervalMs: 10000

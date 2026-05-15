@@ -1,6 +1,13 @@
 package zincflow.fabric
 
+import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.core.StreamReadFeature
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper
+import com.fasterxml.jackson.module.kotlin.KotlinModule
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.yaml.snakeyaml.Yaml
@@ -37,8 +44,18 @@ object ConfigOverlay {
     const val ENV_LOCAL: String = "ZINCFLOW_CONFIG_LOCAL"
     const val ENV_SECRETS: String = "ZINCFLOW_SECRETS_PATH"
 
-    val yamlMapper: ObjectMapper = YamlMapper.mapper
-
+    val yml = YAMLMapper().apply {
+        registerKotlinModule()
+        disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+        disable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+        disable(DeserializationFeature.FAIL_ON_NULL_CREATOR_PROPERTIES)
+        setDefaultPropertyInclusion(JsonInclude.Value.ALL_NON_NULL)
+        setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
+    }
+    val yamlMapper: ObjectMapper = YamlMapper.mapper.copy()
+        .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+        .disable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+        .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
     /** Explicit paths — used by tests and the admin API's
      * `PUT /api/overlays/secrets` write-through path. */
     /** Default behaviour — env vars first, sibling files as fallback. */
@@ -78,6 +95,12 @@ object ConfigOverlay {
     private fun readLayer(role: String, path: Path?): Layer {
         if (path == null || !Files.isRegularFile(path)) {
             return Layer(role, path, false, mapOf())
+        }
+        try {
+            val fileLayer = yml.readValue(path.toFile(), ConfigurationRoot::class.java)
+            println(fileLayer)
+        } catch (e: Exception) {
+            log.error("Exception parsing layer: $e")
         }
         val yaml = Files.readString(path)
         if (yaml.isBlank()) return Layer(role, path, true, mapOf())

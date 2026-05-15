@@ -7,6 +7,7 @@ import zincflow.core.Processor
 import zincflow.core.ProcessorContext
 import zincflow.core.Provider
 import zincflow.core.Source
+import zincflow.core.YamlMapper
 import zincflow.fabric.ConfigOverlay.Resolved
 import zincflow.fabric.ConfigOverlay.load
 import java.io.IOException
@@ -50,11 +51,13 @@ class ConfigLoader @JvmOverloads constructor(
      * next load to decide which instances can be reused. */
 
     private val context: ProcessorContext = context ?: ProcessorContext()
-    private var lastSpecs: MutableMap<String, ProcessorSpec> = mutableMapOf()
-    private var lastProcessors: MutableMap<String, Processor> = mutableMapOf()
+    private var lastSpecs = mutableMapOf<String, ProcessorSpec>()
+    private var lastProcessors = mutableMapOf<String, Processor>()
     private var lastOverlay: Resolved? = null
     private var lastSources = mutableListOf<Source>()
     private var lastProviders = mutableListOf<Provider>()
+
+    private val yamlMapper = YamlMapper.mapper
 
     fun context(): ProcessorContext {
         return context
@@ -321,7 +324,7 @@ class ConfigLoader @JvmOverloads constructor(
      *     type: GenerateFlowFile
      *     config:
      *       content: "ping"
-    </pre> * 
+     * </pre>
      * 
      * A null source returned by a factory (e.g. GetFile without
      * inputDir) is treated as "disabled" — logged, not thrown. */
@@ -331,14 +334,12 @@ class ConfigLoader @JvmOverloads constructor(
             log.warn("Source Registry not configured — sources ignored")
             return mutableListOf()
         }
-
         if (sourcesRaw.isEmpty()) return mutableListOf()
 //        require(sourcesRaw is Map<*, *>) { "config: 'sources' must be a map of name → {type, config}" }
         log.info("Processing sources: ${sourcesRaw.entries.size}")
 
         val out: MutableList<Source> = mutableListOf()
-        sourcesRaw.entries.map {
-        }
+
         for (entry in sourcesRaw.entries) {
             log.info("Source: ${entry.key}")
             val name: String = entry.key
