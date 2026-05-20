@@ -121,7 +121,7 @@ object Zinc {
         }
 
         val loader = ConfigLoader(processorRegistry, context, sourceRegistry, providerRegistry)
-        val graph: PipelineGraph = if (configPath != null && Files.isRegularFile(configPath)) {
+        val graph: PipelineGraph = if (Files.isRegularFile(configPath)) {
             log.info("loading pipeline from {}", configPath.toAbsolutePath())
             loader.loadFromFile(configPath)
         } else {
@@ -277,8 +277,8 @@ object Zinc {
     ): List<Provider> {
         return providerRegistry.listAll().mapNotNull { info ->
             val cfg = when (info.name) {
-                UIRegistrationProvider.TYPE if (effective[CFG_UI] is Map<*, *>) -> effective[CFG_UI] as Map<String, Any>
-                VersionControlProvider.TYPE if (effective[CFG_VC] is Map<*, *>) -> effective[CFG_VC] as Map<String, Any>
+                UIRegistrationProvider.TYPE if (effective[CFG_UI] is Map<*, *>) -> effective[CFG_UI].toTypedMap()
+                VersionControlProvider.TYPE if (effective[CFG_VC] is Map<*, *>) -> effective[CFG_VC].toTypedMap()
                 else -> mapOf()
             }
             providerRegistry.create(info.qualifiedName, cfg)

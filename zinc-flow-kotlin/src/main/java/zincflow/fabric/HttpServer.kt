@@ -61,7 +61,7 @@ class HttpServer @JvmOverloads constructor(
     private val pipeline: Pipeline,
     private val loader: ConfigLoader? = null,
     private val configPath: Path? = null,
-    private val plugins: Summary,
+    private val plugins: Summary = Summary.empty(),
     private val pluginsDir: Path? = null,
     private val identity: NodeIdentity? = null,
     private val json: ObjectMapper = JsonMapper.mapper,
@@ -1317,8 +1317,8 @@ class HttpServer @JvmOverloads constructor(
 
     // --- Plugins ---
 
-    private fun pluginSummary(): PluginLoader.Summary {
-        return (if (currentPlugins != null) currentPlugins else plugins) ?: PluginLoader.Summary.empty()
+    private fun pluginSummary(): Summary {
+        return currentPlugins
     }
 
     @Throws(Exception::class)
@@ -1361,7 +1361,7 @@ class HttpServer @JvmOverloads constructor(
 
     private fun nameFromBody(ctx: Context): String {
         val body = readJsonBody(ctx)
-        return if (body == null) "" else str(body["name"])
+        return body?.get("name")?.toString() ?: ""
     }
 
     @Throws(Exception::class)
@@ -1436,23 +1436,6 @@ class HttpServer @JvmOverloads constructor(
                 put("relationships", info.relationships)
                 put("parameters", info.parameters.map { it.asMap() })
             }
-        }
-
-        private fun str(o: Any?): String {
-            return o?.toString() ?: ""
-        }
-
-        private fun asStringMap(raw: Any?): Map<String, String> {
-            return if (raw is Map<*, *>) {
-                raw.entries.associate { (key, value) -> key.toString() to str(value) }
-            } else {
-                mapOf()
-            }
-        }
-
-        private fun asStringList(raw: Any?): List<String> {
-            if (raw !is List<*>) return listOf()
-            return raw.map { str(it) }
         }
 
         private fun asConnections(raw: Any?): Map<String, List<String>> {

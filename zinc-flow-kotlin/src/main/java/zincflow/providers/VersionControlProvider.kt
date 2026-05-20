@@ -20,11 +20,11 @@ import kotlin.concurrent.Volatile
  * Enable path (config.yaml):
  * <pre>
  * vc:
- * enabled: true
- * repo: /etc/zincflow        # working tree, defaults to cwd
- * git: /usr/bin/git          # executable, defaults to "git" on PATH
- * remote: origin             # default remote for push
- * branch: main               # default branch for push
+ *   enabled: true
+ *   repo: /etc/zincflow        # working tree, defaults to cwd
+ *   git: /usr/bin/git          # executable, defaults to "git" on PATH
+ *   remote: origin             # default remote for push
+ *   branch: main               # default branch for push
 </pre> * 
  * 
  * Operations:

@@ -47,9 +47,11 @@ object YamlEmitter {
             if (connections.isNotEmpty()) flow["connections"] = connections
         }
 
-        val top = mutableMapOf<String, Any>()
-        top["flow"] = flow
-        top["sources"] = graph.sources
+        flow["sources"] = graph.sources
+
+        val top = mapOf("flow" to flow)
+//        val top = mutableMapOf<String, Any>()
+//        top["flow"] = flow
 
         return dumper().dump(top)
     }

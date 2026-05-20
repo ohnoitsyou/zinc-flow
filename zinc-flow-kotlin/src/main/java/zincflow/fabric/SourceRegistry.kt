@@ -53,24 +53,24 @@ class SourceRegistry {
         return if (latest == null) null else TypeRefs.qualify(type, latest)
     }
 
-    fun create(type: String, name: String, config: MutableMap<String, Any>): Source? {
+    fun create(type: String, name: String, config: Map<String, Any>): Source? {
         val key = resolveKey(type) ?: throw IllegalArgumentException("$type is not defined")
         return versioned[key]?.create(name, config)
     }
 
-    fun listAll(): MutableList<TypeInfo> {
+    fun listAll(): List<TypeInfo> {
         return metadata.values
             .sortedWith(Comparator.comparing(TypeInfo::name)
                 .thenComparing(TypeInfo::version) { a, b ->
                     TypeRefs.compareVersions(a, b)
                 }
-            ).toMutableList()
+            )
     }
 
-    fun listVersions(type: String): MutableList<TypeInfo> {
+    fun listVersions(type: String): List<TypeInfo> {
         return metadata.values.filter { it.name == type }.sortedWith(
             Comparator.comparing(TypeInfo::version) { a, b -> TypeRefs.compareVersions(a, b) }
-        ).toMutableList()
+        )
     }
 
     fun latest(type: String): TypeInfo? {

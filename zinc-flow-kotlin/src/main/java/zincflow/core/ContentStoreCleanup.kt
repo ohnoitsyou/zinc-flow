@@ -29,16 +29,20 @@ class ContentStoreCleanup(private val store: ContentStore) {
 
     private var running: ScheduledFuture<*>? = null
 
-    /** Register a claim that's now live. Safe to call from any thread
+    /**
+     * Register a claim that's now live. Safe to call from any thread
      * — typically from [ContentHelpers.maybeOffload] or wherever
-     * else a new ClaimContent is created. */
+     * else a new ClaimContent is created.
+     */
     fun track(claimId: String) {
         if (claimId.isEmpty()) return
         synchronized(lock) { active.add(claimId) }
     }
 
-    /** Mark a claim as releasable. The next sweep will delete it from
-     * the store if it isn't re-tracked before then. */
+    /**
+     * Mark a claim as releasable. The next sweep will delete it from
+     * the store if it isn't re-tracked before then.
+     */
     fun release(claimId: String) {
         synchronized(lock) { active.remove(claimId) }
     }
@@ -47,12 +51,15 @@ class ContentStoreCleanup(private val store: ContentStore) {
         synchronized(lock) { return active.size }
     }
 
-    /** Delete any claim known to the store that isn't currently in the
+    /**
+     * Delete any claim known to the store that isn't currently in the
      * active set. Returns the number deleted — callers can log or
-     * metric-ize this without having to subscribe to logging. */
+     * metric-ize this without having to subscribe to logging.
+     */
     fun sweep(knownClaims: MutableList<String>): Int {
         if (knownClaims.isEmpty()) return 0
         val snapshot = synchronized(lock) { active.toSet() }
+        val matchingClaims = snapshot intersect knownClaims.toSet()
         return knownClaims.fold(0) { acc, claim ->
             if(!snapshot.contains(claim)) {
                 try {
@@ -69,11 +76,13 @@ class ContentStoreCleanup(private val store: ContentStore) {
     }
 
     // TODO: Convert to use coroutines
-    /** Start a periodic sweep. Caller provides a [ClaimEnumerator]
+    /**
+     * Start a periodic sweep. Caller provides a [ClaimEnumerator]
      * that returns every claim the store currently holds — disk-backed
      * stores walk the directory, memory stores enumerate the map.
      * Running more than once is idempotent: the previous schedule is
-     * cancelled first. */
+     * cancelled first.
+     */
     fun startPeriodicSweep(period: Long, unit: TimeUnit, enumerator: ClaimEnumerator) {
         stopPeriodicSweep()
         // Scheduler thread stays platform (STPE timing relies on

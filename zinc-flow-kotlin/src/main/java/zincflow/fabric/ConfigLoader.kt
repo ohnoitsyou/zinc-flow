@@ -10,6 +10,9 @@ import zincflow.core.Source
 import zincflow.core.YamlMapper
 import zincflow.fabric.ConfigOverlay.Resolved
 import zincflow.fabric.ConfigOverlay.load
+import zincflow.stringifyMap
+import zincflow.toStringList
+import zincflow.toTypedMap
 import java.io.IOException
 import java.nio.file.Path
 import kotlin.time.TimeSource
@@ -111,7 +114,7 @@ class ConfigLoader @JvmOverloads constructor(
 
         val parsed = Yaml().load<Any?>(yamlSource)
         require(parsed is MutableMap<*, *>) { "config: top-level must be a map" }
-        val top = normalizeTop(parsed)
+        val top = parsed.toTypedMap()
         return load(top)
     }
 
@@ -162,10 +165,10 @@ class ConfigLoader @JvmOverloads constructor(
             val name: String = entry.key as String
             val processor = entry.value as? Map<*, Any?> ?: throw ConfigProcessingException("config: processor '$name' must be a map" )
             val type = processor[TYPE_KEY]?.toString() ?: throw ConfigProcessingException("config: processor '$name' missing 'type'")
-            val config = stringMap(processor[CONFIG_KEY])
+            val config = processor[CONFIG_KEY].stringifyMap()
             val spec = ProcessorSpec(type, config)
 
-            // Reuse the prior processor instance when the spec is
+            // Reuse the prior processor instance when the spec lis
             // byte-identical — keeps in-flight state (counters, caches,
             // connections) across a reload instead of churning every
             // processor on a cosmetic config change.
@@ -182,8 +185,7 @@ class ConfigLoader @JvmOverloads constructor(
 
         // --- connections ---
         log.info("Loading connections")
-        val connections: MutableMap<String, MutableMap<String, List<String>>> = mutableMapOf()
-//            HashMap<String, MutableMap<String, MutableList<String>>>()
+        val connections = mutableMapOf<String, MutableMap<String, List<String>>>()
         val connsRaw = flowRaw["connections"]
         if (connsRaw is MutableMap<*, *>) {
             for (fromEntry in connsRaw.entries) {
@@ -193,7 +195,7 @@ class ConfigLoader @JvmOverloads constructor(
                 val relationships: MutableMap<String, List<String>> = mutableMapOf()
                 for (relEntry in entryCons.entries) {
                     val rel: String = relEntry.key as String
-                    val targets: List<String> = stringList(relEntry.value)
+                    val targets: List<String> = relEntry.value.toStringList()
                     relationships[rel] = targets
                 }
                 connections[from] = relationships
@@ -203,7 +205,7 @@ class ConfigLoader @JvmOverloads constructor(
 
         // --- entry points ---
         log.info("Loading entry points")
-        val entryPoints: List<String> = stringList(flowRaw["entryPoints"])
+        val entryPoints: List<String> = flowRaw["entryPoints"].toStringList()
         if(entryPoints.isEmpty()) throw ConfigProcessingException("config: 'flow.entryPoints' must be a non-empty list" )
 //        require(!entryPoints.isEmpty()) { "config: 'flow.entryPoints' must be a non-empty list" }
         entryPoints.filterNot { processors.containsKey(it) }.takeIf { it.isNotEmpty() }?.let { e ->
@@ -252,7 +254,7 @@ class ConfigLoader @JvmOverloads constructor(
 //            Collections.unmodifiableMap<kotlin.String?, Processor?>(LinkedHashMap<kotlin.String?, Processor?>(processors))
 
         log.info("Building sources")
-        lastSources = buildSources(effective["sources"] as? Map<String, Any> ?: emptyMap())
+        lastSources = buildSources(effective["sources"].toTypedMap())
         log.info("Sources complete")
 
         log.info("Loading providers")
@@ -264,19 +266,22 @@ class ConfigLoader @JvmOverloads constructor(
         return PipelineGraph(processors, connections, entryPoints, listOf())
     }
 
-    /** Build every provider declared under `providers:`. Same
-     * `{type, config}` shape as processors and sources:
+    /**
+     * Build every provider declared under `providers:`.
+     * Same `{type, config}` shape as processors and sources:
      * <pre>
      * providers:
-     * logging:
-     * type: LoggingProvider
-     * prov:
-     * type: ProvenanceProvider
-     * config: {buffer: 10000}
-    </pre> * 
+     *   logging:
+     *     type: LoggingProvider
+     *   prov:
+     *     type: ProvenanceProvider
+     *     config:
+     *       buffer: 10000
+     * </pre>
      * Missing block → empty list, and the caller keeps whatever
      * provider set it bootstrapped. Factories returning null are
-     * treated as "disabled for this config" — logged, not thrown. */
+     * treated as "disabled for this config" — logged, not thrown.
+     */
     private fun buildProviders(providersRaw: Any?): MutableList<Provider> {
         if (providersRaw == null) return mutableListOf()
         require(providersRaw is MutableMap<*, *>) { "config: 'providers' must be a map of name → {type, config}" }
@@ -293,7 +298,7 @@ class ConfigLoader @JvmOverloads constructor(
             requireNotNull(typeRaw) { "config: provider '$name' missing 'type'" }
             val entryConfig = entryValue[CONFIG_KEY]
             val providerConfig = if (entryConfig is MutableMap<*, *>) {
-                stringKeyed(entryConfig)
+                entryConfig.toTypedMap()
             } else {
                 mutableMapOf()
             }
@@ -342,7 +347,7 @@ class ConfigLoader @JvmOverloads constructor(
 
         for (entry in sourcesRaw.entries) {
             log.info("Source: ${entry.key}")
-            val name: String = entry.key
+            val name = entry.key
             val sourceRoot = entry.value
             require(sourceRoot is Map<*, *>) { "config: sources: section for '$name' did not parse as Map" }
 
@@ -353,21 +358,20 @@ class ConfigLoader @JvmOverloads constructor(
             }
 
             val configRaw = sourceRoot[CONFIG_KEY]
-            val sourceConfig = if (configRaw is MutableMap<*, *>) {
-                stringKeyed(configRaw)
+            val sourceConfig = if (configRaw is Map<*, *>) {
+                configRaw.toTypedMap()
             } else {
-                mutableMapOf()
+                mapOf()
             }
             log.info("Source config: $sourceConfig")
 
             val source = sourceRegistry.create(typeRaw, name, sourceConfig)
             if (source == null) {
                 log.info("source '$name' ($typeRaw): factory returned null — disabled", name, typeRaw)
-                continue
+            } else {
+                out.add(source)
+                log.info("Done with source: $name")
             }
-
-            out.add(source)
-            log.info("Done with source: $name")
         }
         return out.toMutableList()
     }
@@ -375,35 +379,11 @@ class ConfigLoader @JvmOverloads constructor(
     companion object {
         private val log: Logger = LoggerFactory.getLogger(ConfigLoader::class.java)
 
-
         /** Shared YAML keys for `{type, config}` blocks (processors,
          * sources, and — soon — providers). Also used by the admin HTTP
          * surface when it echoes the same shape back. */
         const val TYPE_KEY: String = "type"
         const val CONFIG_KEY: String = "config"
-
-        private fun stringKeyed(raw: MutableMap<*, *>): MutableMap<String, Any> {
-            return raw.mapNotNull { (k, v) -> v?.let { k.toString() to v } }.toMap().toMutableMap()
-        }
-
-        private fun stringMap(raw: Any?): Map<String, String> {
-            if (raw == null) return mapOf()
-            require(raw is Map<*, *>) { "config: expected a map, got " + raw.javaClass.getSimpleName() }
-            return raw.entries.associate { (k, v) -> "$k" to if(v == null) "" else "$v" }
-        }
-
-        private fun stringList(raw: Any?): List<String> {
-            if (raw == null) return listOf()
-            require(raw is List<*>) { "config: expected a list, got " + raw.javaClass.getSimpleName() }
-            return raw.map { it as String }.toMutableList()
-        }
-
-        /** Normalises top-level keys to String. SnakeYAML default loader
-         * can yield `Map<Object, Object>`; downstream code expects
-         * `Map<String, Object>`. */
-        private fun normalizeTop(raw: MutableMap<*, *>): MutableMap<String, Any> {
-            return raw.mapNotNull { (k, v) -> v?.let { k.toString() to v } }.toMap().toMutableMap()
-        }
     }
 }
 

@@ -41,6 +41,8 @@ import kotlin.Deprecated
 import kotlin.Int
 import kotlin.NumberFormatException
 import kotlin.String
+import kotlin.time.DurationUnit
+import kotlin.time.toDuration
 
 /** Processor registry — maps the `type:` value in config.yaml to
  * a factory that instantiates the processor given its config map plus
@@ -281,7 +283,7 @@ class ProcessorRegistry {
             PutHTTP(
                 required(cfg, "endpoint"),
                 cfg.getOrDefault("method", "POST"),
-                Duration.ofSeconds(cfg.getOrDefault("timeoutSeconds", "30").toLong()),
+                cfg.getOrDefault("timeoutSeconds", "30").toLong().toDuration(DurationUnit.SECONDS),
                 cfg.getOrDefault("contentType", "application/octet-stream"),
                 cfg.getOrDefault("format", "raw"),
                 storeFrom(ctx)

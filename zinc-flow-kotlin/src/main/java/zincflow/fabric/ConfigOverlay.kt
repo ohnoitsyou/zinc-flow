@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.core.StreamReadFeature
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.exc.MismatchedInputException
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
@@ -96,24 +97,34 @@ object ConfigOverlay {
         if (path == null || !Files.isRegularFile(path)) {
             return Layer(role, path, false, mapOf())
         }
-        try {
-            val fileLayer = yml.readValue(path.toFile(), ConfigurationRoot::class.java)
-            println(fileLayer)
-        } catch (e: Exception) {
-            log.error("Exception parsing layer: $e")
-        }
+        // TODO: Revisit when ready to migrate to HOCON
+//        try {
+//            val fileLayer = yml.readValue(path.toFile(), ConfigurationRoot::class.java)
+//            println(fileLayer)
+//        } catch (e: Exception) {
+//            log.error("Exception parsing layer: $e")
+//        }
         val yaml = Files.readString(path)
         if (yaml.isBlank()) return Layer(role, path, true, mapOf())
 
-        val parsedYaml = yamlMapper.readValue(yaml, Map::class.java)
-        val processedYaml = if (parsedYaml is Map<*, *>) {
-            parsedYaml.entries.associate { (k, v) -> k as String to v as Any }
-        } else { emptyMap() }
+        try {
+            val parsedYaml = yamlMapper.readValue(yaml, Map::class.java)
+            val processedYaml = if (parsedYaml is Map<*, *>) {
+                parsedYaml.entries.associate { (k, v) -> k as String to v as Any }
+            } else {
+                emptyMap()
+            }
 
-        return Layer(role, path, true, processedYaml)
+            return Layer(role, path, true, processedYaml)
 //        val parsed = Yaml().load<Any?>(yaml) ?: return Layer(role, path, true, mutableMapOf())
 //        require(parsed is Map<*, *>) { "overlay '$role' ($path) must be a YAML map, got ${parsed.javaClass.getSimpleName()}" }
 //        return Layer(role, path, true, normalizeKeys(parsed as Map<Any, Any>))
+        } catch (e: Exception) {
+            if (e is MismatchedInputException) {
+                log.error("Tried to parse input as map: $e")
+            }
+            throw IllegalArgumentException(e)
+        }
     }
 
     /** Recursive deep-merge: `src` onto `dst` with

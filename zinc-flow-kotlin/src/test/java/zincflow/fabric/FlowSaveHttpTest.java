@@ -29,7 +29,7 @@ final class FlowSaveHttpTest {
         var loader = new ConfigLoader(registry);
         var graph = loader.loadFromFile(base);
         var pipeline = new Pipeline(graph, Pipeline.DEFAULT_MAX_HOPS, null, loader.context(), registry);
-        return new HttpServer(pipeline, loader, base, null, null).start(0);
+        return new HttpServer(pipeline, loader, base).start(0);
     }
 
     private String base() { return "http://localhost:" + server.port(); }

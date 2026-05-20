@@ -14,8 +14,10 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpRequest.BodyPublishers
 import java.net.http.HttpResponse.BodyHandlers
-import java.time.Duration
 import java.util.Locale
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 
 /** Sink-style processor that POSTs / PUTs / PATCHes the FlowFile's
  * content to a URL via the JDK's [HttpClient]. 2xx → success;
@@ -29,8 +31,8 @@ import java.util.Locale
 class PutHTTP @JvmOverloads constructor(
     endpoint: String,
     method: String = "POST",
-    private val timeout: Duration = Duration.ofSeconds(30),
-    contentType: String? = "application/octet-stream",
+    private val timeout: Duration = 30.seconds,
+    contentType: String = "application/octet-stream",
     format: String? = "raw",
     private val store: ContentStore? = null
 ) : Processor {
@@ -47,11 +49,11 @@ class PutHTTP @JvmOverloads constructor(
     private val contentType: String = if (this.v3) {
         "application/flowfile-v3"
     } else {
-        contentType ?: "application/octet-stream"
+        contentType
     }
 
     private val client: HttpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(10))
+        .connectTimeout(10.seconds.toJavaDuration())
         .version(HttpClient.Version.HTTP_2)
         .build()
 
@@ -63,12 +65,12 @@ class PutHTTP @JvmOverloads constructor(
         val body = if (v3) FlowFileV3.pack(ff, resolved.bytes) else resolved.bytes
         val request = HttpRequest.newBuilder()
             .uri(endpoint)
-            .timeout(timeout)
+            .timeout(timeout.toJavaDuration())
             .header("Content-Type", contentType)
             .method(method, BodyPublishers.ofByteArray(body))
             .build()
         try {
-            val response = client.send<ByteArray?>(request, BodyHandlers.ofByteArray())
+            val response = client.send(request, BodyHandlers.ofByteArray())
             val status = response.statusCode()
             val withMeta = ff
                 .withAttribute(FlowFileAttributes.PUTHTTP_STATUS, status.toString())

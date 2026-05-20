@@ -109,9 +109,9 @@ final class ProcessorRegistryMetadataTest {
         // Shared React UI treats kind strings case-sensitively. Java's
         // SCREAMING_SNAKE_CASE enum names must serialize as PascalCase to
         // match the C# worker.
-        assertEquals("String", ParamKind.STRING.jsonName());
-        assertEquals("KeyValueList", ParamKind.KEY_VALUE_LIST.jsonName());
-        assertEquals("StringList", ParamKind.STRING_LIST.jsonName());
-        assertEquals("Expression", ParamKind.EXPRESSION.jsonName());
+        assertEquals("String", ParamKind.STRING.getJsonName());
+        assertEquals("KeyValueList", ParamKind.KEY_VALUE_LIST.getJsonName());
+        assertEquals("StringList", ParamKind.STRING_LIST.getJsonName());
+        assertEquals("Expression", ParamKind.EXPRESSION.getJsonName());
     }
 }

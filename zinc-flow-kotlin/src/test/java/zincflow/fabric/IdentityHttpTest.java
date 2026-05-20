@@ -25,7 +25,7 @@ final class IdentityHttpTest {
     void identityEndpointReportsNodeIdAndPort() throws Exception {
         var identity = new NodeIdentity("node-42", "my-host", "9.0.0");
         var pipeline = new Pipeline(PipelineGraph.Companion.empty());
-        server = new HttpServer(pipeline, null, null, null, null, identity).start(0);
+        server = new HttpServer(pipeline, null, null, PluginLoader.Summary.Companion.empty(), null, identity).start(0);
 
         var resp = http.send(
                 HttpRequest.newBuilder(URI.create("http://localhost:" + server.port() + "/api/identity"))

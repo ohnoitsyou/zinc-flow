@@ -67,16 +67,15 @@ class ContentProvider @JvmOverloads constructor(private val name: String = NAME,
         }
 
         override fun create(config: Map<String, Any>): Provider {
-            val kind: String = if (config["store"] == null) "memory" else config["store"].toString()
+            val kind = config["store"]?.toString() ?: "memory"
+//            val kind: String = if (config["store"] == null) "memory" else config["store"].toString()
             if ("file".equals(kind, ignoreCase = true)) {
                 val dir: Any? = config["directory"]
                 requireNotNull(dir) { "ContentProvider: file store requires 'directory'" }
                 try {
                     return ContentProvider(FileContentStore.NAME, FileContentStore(Path.of(dir.toString())))
                 } catch (ex: IOException) {
-                    throw IllegalStateException(
-                        "ContentProvider: failed to init file store at $dir", ex
-                    )
+                    throw IllegalStateException("ContentProvider: failed to init file store at $dir", ex)
                 }
             }
             return ContentProvider(MemoryContentStore.NAME, MemoryContentStore())

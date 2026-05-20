@@ -37,24 +37,18 @@ internal object AvroConversion {
     private fun unwrap(value: Any?, schema: Schema): Any? {
         if (value == null) return null
         val effective = resolveUnion(schema, value)
-        return when (effective.getType()) {
+        return when (effective.type) {
             Schema.Type.STRING -> if (value is Utf8) value.toString() else value.toString()
             Schema.Type.BYTES -> if (value is ByteBuffer) toByteArray(value) else value
             Schema.Type.RECORD -> toMap(value as GenericRecord)
             Schema.Type.ARRAY -> {
-                val src = value as MutableList<Any?>
-                val out: MutableList<Any?> = ArrayList(src.size)
-                for (item in src) out.add(unwrap(item, effective.getElementType()))
-                out
+                val src = value as List<Any?>
+                src.map { unwrap(it, effective.elementType)}
             }
 
             Schema.Type.MAP -> {
-                val src = value as MutableMap<CharSequence?, Any?>
-                val out: MutableMap<String?, Any?> = LinkedHashMap()
-                for (entry in src.entries) {
-                    out.put(entry.key.toString(), unwrap(entry.value, effective.getValueType()))
-                }
-                out
+                val src = value as Map<CharSequence?, Any?>
+                src.entries.associate { (k, v) -> k.toString() to unwrap(v, effective.valueType)}
             }
 
             else -> value

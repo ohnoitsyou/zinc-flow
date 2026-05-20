@@ -1,10 +1,24 @@
 package zincflow.core
 
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.util.concurrent.TimeUnit
 import java.util.function.Predicate
 import kotlin.concurrent.Volatile
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Abstract base for sources that wake up on a fixed interval, scan
  * an external system, and hand resulting FlowFiles to the pipeline.
@@ -26,18 +40,18 @@ import kotlin.concurrent.Volatile
  * `.processed/`) or [.onRejected].
  * 
  * Mirrors zinc-flow-csharp's PollingSource. */
-abstract class PollingSource protected constructor(private val name: String, pollIntervalMillis: Long) : Source {
+abstract class PollingSource protected constructor(private val name: String, pollIntervalMillis: Long) : Source, AutoCloseable, CoroutineScope {
     // Guard against zero/negative — a tight loop would pin a CPU
     // and surprise any operator who typo'd a config value.
     private val pollIntervalMillis: Long = pollIntervalMillis.takeIf { it > 0 } ?: 1000
 
-//    @Volatile
-//    protected var running = false
+    override val isRunning: Boolean
+        get() = currentJob?.isActive ?: false
 
-    override var isRunning: Boolean = false
+    private var currentJob: Job? = null
 
-    @Volatile
-    private var loop: Thread? = null
+//    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    override val coroutineContext: CoroutineContext = SupervisorJob() + Dispatchers.IO
 
     init {
         require(name.isNotEmpty()) { "source name must not be blank" }
@@ -68,27 +82,25 @@ abstract class PollingSource protected constructor(private val name: String, pol
     @Synchronized
     override fun start(ingest: (FlowFile) -> Boolean) {
         if (isRunning) return
-        isRunning = true
-        loop = Thread.ofVirtual().name("zinc-flow-source-$name").start { runLoop(ingest) }
-        log.info("source $name started (${sourceType()} type, poll=${pollIntervalMillis}ms)")
+        this.currentJob = launch(CoroutineName("source-$name")) {
+            runLoop(ingest)
+            log.info("source $name started (${sourceType()} type, poll=${pollIntervalMillis}ms)")
+        }
     }
 
     @Synchronized
     override fun stop() {
-        if (!isRunning) return
-        isRunning = false
-        loop?.interrupt() ?: return
-        loop = null
+        if (isRunning) cancel()
         log.info("source $name stopped")
     }
 
-    private fun runLoop(ingest: (FlowFile) -> Boolean) {
-        while (isRunning && !Thread.currentThread().isInterrupted) {
+    private suspend fun runLoop(ingest: (FlowFile) -> Boolean) {
+        while(currentCoroutineContext().isActive) {
             try {
                 val batch = poll()
                 for (ff in batch) {
-                    if (!isRunning) return
-                    val accepted: Boolean = try {
+                    currentCoroutineContext().ensureActive()
+                    val accepted = try {
                         ingest(ff)
                     } catch (ex: RuntimeException) {
                         log.warn("source $name: ingest threw for ${ff.stringId()} — $ex")
@@ -97,16 +109,18 @@ abstract class PollingSource protected constructor(private val name: String, pol
                     if (accepted) onIngested(ff)
                     else onRejected(ff)
                 }
+                delay(pollIntervalMillis.milliseconds)
             } catch (ex: RuntimeException) {
                 log.warn("source $name: poll failed — $ex")
-            }
-            try {
-                TimeUnit.MILLISECONDS.sleep(pollIntervalMillis)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
+            } catch (_: CancellationException) {
+                cancel()
                 return
             }
         }
+    }
+
+    override fun close() {
+        cancel()
     }
 
     companion object {

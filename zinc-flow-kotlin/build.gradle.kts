@@ -36,6 +36,7 @@ dependencies {
     implementation(libs.logbackClassic)
     implementation(libs.micrometer.core)
     implementation(libs.micrometer.prom.registry)
+    implementation(libs.kotlinx.coroutines.core)
 
     // Use the Kotlin Test integration.
     testImplementation("org.jetbrains.kotlin:kotlin-test")
