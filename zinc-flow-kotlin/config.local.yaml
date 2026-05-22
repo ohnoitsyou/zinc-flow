@@ -1,0 +1,12 @@
+flow:
+  entryPoints:
+    - ingress-local
+  processors:
+    ingress-local:
+      type: LogAttribute
+      config:
+        prefix: '[in-local] '
+  connections:
+    ingress-local:
+      success:
+        - LogAttribute

@@ -1,0 +1,45 @@
+flow {
+    connections {}
+    entryPoints=[
+        ingress,
+        ${USER}
+    ]
+    processors {
+        LogAttribute {
+            type=LogAttribute
+        }
+        elevate {
+            config {
+                key=priority
+                value=elevated
+            }
+            type=UpdateAttribute
+        }
+        enrich {
+            config {
+                key=route
+                value=bulk-queue
+            }
+            type=UpdateAttribute
+        }
+        ingress {
+            config {
+                prefix="[in] "
+            }
+            type=LogAttribute
+        }
+        router {
+            config {
+                routes="urgent: priority == urgent; bulk: priority == bulk"
+            }
+            type=RouteOnAttribute
+        }
+        sink {
+            config {
+                prefix="[out] "
+            }
+            type=PutStdout
+        }
+    }
+    sources {}
+}

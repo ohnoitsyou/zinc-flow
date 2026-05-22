@@ -8,6 +8,7 @@
 plugins {
     // Apply the org.jetbrains.kotlin.jvm Plugin to add support for Kotlin.
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlinx.serialization)
 
     // Apply the application plugin to add support for building a CLI application in Java.
     application
@@ -37,6 +38,7 @@ dependencies {
     implementation(libs.micrometer.core)
     implementation(libs.micrometer.prom.registry)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.serialization.hocon)
 
     // Use the Kotlin Test integration.
     testImplementation("org.jetbrains.kotlin:kotlin-test")
