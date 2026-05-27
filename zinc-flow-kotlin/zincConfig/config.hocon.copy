@@ -1,5 +1,12 @@
 flow {
-    connections {}
+    connections {
+        ingress {
+            connections {
+                success=[router]
+                original=[LogAttribute]
+            }
+        }
+    }
     entryPoints=[
         ingress,
         ${USER}
