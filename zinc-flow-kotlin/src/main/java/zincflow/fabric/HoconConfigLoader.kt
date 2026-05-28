@@ -8,6 +8,7 @@ import com.typesafe.config.ConfigValueType
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.hocon.Hocon
+import zincflow.core.ProcessorContext
 import java.nio.file.Path
 import kotlin.collections.component1
 import kotlin.collections.component2
@@ -243,6 +244,9 @@ fun main() {
     val projectBase = Path.of("/home/dayoun9/projects/github/zinc-flow/zinc-flow-kotlin/zincConfig/base-2")
     val applicationConfig = ZincConfigLoader.resolveConfig(projectBase.resolve("base"), projectBase.resolve("config.local.conf"), projectBase.resolve("config.admin.conf"))
     println("Zinc Config: ${applicationConfig.zincConfig}")
+
+    val p = ZincConfigProcessor(ProcessorRegistry(), SourceRegistry(), ProviderRegistry())
+    p.toPipeline(applicationConfig.zincConfig, ProcessorContext())
 
 //    val updatedConfig = ZincConfigLoader.applyDeltaAndReloadStack(applicationConfig, "flow { connections = ___RESET___ }", false)
 //    println("Updated Config: ${updatedConfig.zincConfig}")

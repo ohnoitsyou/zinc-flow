@@ -168,7 +168,7 @@ class ConfigLoader @JvmOverloads constructor(
             val config = processor[CONFIG_KEY].stringifyMap()
             val spec = ProcessorSpec(type, config)
 
-            // Reuse the prior processor instance when the spec lis
+            // Reuse the prior processor instance when the spec is
             // byte-identical — keeps in-flight state (counters, caches,
             // connections) across a reload instead of churning every
             // processor on a cosmetic config change.

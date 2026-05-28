@@ -185,7 +185,10 @@ class ProcessorRegistry {
         factory: Factory
     ) {
         val configKeys = params.mapNotNull(ParamInfo::name)
-        register(TypeInfo(name, TypeRefs.DEFAULT_VERSION, description, configKeys, relationships, category, params), factory)
+        register(
+            TypeInfo(name, TypeRefs.DEFAULT_VERSION, description, configKeys, relationships, category, params),
+            factory
+        )
     }
 
     private fun registerBuiltins() {
