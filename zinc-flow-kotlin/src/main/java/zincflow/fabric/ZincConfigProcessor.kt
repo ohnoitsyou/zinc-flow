@@ -50,8 +50,20 @@ fun interface ProcessorFactory {
 }
 
 class LogAttributeProcessor: ProcessorFactory {
-    val parameters = listOf(ParamInfo.of(PREFIX_CONFIG_KEY).description("Log line prefix").defaultValue("").build())
     val logger = LoggingProvider()
+    val configKeys = parameters.mapNotNull(ParamInfo::name)
+
+    fun typeInfo() {
+        ProcessorRegistry.TypeInfo(
+            name = PROCESSOR_NAME,
+            version = PROCESSOR_VERSION,
+            description = PROCESSOR_DESCRIPTION,
+            configKeys =  configKeys,
+            relationships = relationships,
+            category = PROCESSOR_CATEGORY,
+            parameters = parameters,
+        )
+    }
 
     override fun create(name: String, config: Map<String, String>, ctx: ProcessorContext): Processor {
         return object : Processor {
@@ -81,6 +93,12 @@ class LogAttributeProcessor: ProcessorFactory {
     }
     companion object {
         const val PREFIX_CONFIG_KEY = "prefix"
+        const val PROCESSOR_NAME = "LogAttribute"
+        const val PROCESSOR_VERSION = "1.0.0"
+        const val PROCESSOR_DESCRIPTION = "Log FLowFile attributes and pass downstream"
+        const val PROCESSOR_CATEGORY = "Attribute"
+        val parameters = listOf(ParamInfo.of(PREFIX_CONFIG_KEY).description("Log line prefix").defaultValue("").build())
+        val relationships = listOf("success")
     }
 }
 
