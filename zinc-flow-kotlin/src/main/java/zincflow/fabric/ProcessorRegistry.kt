@@ -74,10 +74,12 @@ class ProcessorRegistry {
         registerBuiltins()
     }
 
-    /** A factory for a processor given its config map and the surrounding
+    /**
+     * A factory for a processor given its config map and the surrounding
      * processor context. The context is never null — callers that don't
      * care can pass `new ProcessorContext()` and ignore it inside
-     * the factory. */
+     * the factory.
+     */
     fun interface Factory {
         fun create(config: Map<String, String>, ctx: ProcessorContext): Processor?
     }

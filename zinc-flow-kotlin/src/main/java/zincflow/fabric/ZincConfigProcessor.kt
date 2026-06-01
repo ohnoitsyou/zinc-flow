@@ -4,6 +4,8 @@ import zincflow.core.FlowFile
 import zincflow.core.Processor
 import zincflow.core.ProcessorContext
 import zincflow.core.ProcessorResult
+import zincflow.core.Provider
+import zincflow.core.Source
 import zincflow.providers.LoggingProvider
 
 class ZincConfigProcessor(
@@ -12,36 +14,49 @@ class ZincConfigProcessor(
     val providerRegistry: ProviderRegistry,
 ) {
     private val processorSpecCache = mutableMapOf<String, ProcessorSpec>()
-    fun toPipeline(config: ZincConfig, ctx: ProcessorContext): PipelineGraph {
-        val flow = config.flow
+    private var lastProcessors = listOf<Processor>()
+    private var lastSources = listOf<Source>()
+    private var lastProviders = listOf<Provider>()
 
+
+
+    fun toPipeline(appConfig: SlimZincConfig, ctx: ProcessorContext): PipelineGraph {
+        val flow = appConfig.zincConfig.flow
 
         // Validate each portion of the config to ensure we either already have or
         //   can create the entities we need
         // ===== Processors =====
-        val p = flow.processors
-        val specs = p.mapValues { (_, it) ->
-            ProcessorSpec(it.type, it.config)
-        }
-        val processors = specs.map { (name, spec) ->
+        val processors = flow.processors.entries.asSequence().mapNotNull { (name, config) ->
+            val spec = ProcessorSpec(config.type, config.config)
             val nameWithHash = "$name-${spec.hashCode()}"
-            val s = processorSpecCache.putIfAbsent(nameWithHash, spec)
-            val p = processorRegistry.
+            processorSpecCache.putIfAbsent(nameWithHash, spec)
+            val processor = processorRegistry.create(spec.type, spec.config, ctx)
+            if (processor != null) name to processor else null
+        }.toMap()
+        lastProcessors = processors.values.toList()
 
-        }
+        // ===== Connections =====
+        val connections = flow.connections.mapValues { (_, it) -> it.connections }
 
         // ===== Providers =====
+        val providers = flow.providers.mapNotNull { (_, it) ->
+            providerRegistry.create(it.type, it.config)
+        }
+        lastProviders = providers
 
         // ===== Sources =====
+        val sources = flow.sources.mapNotNull { (name, config) ->
+            sourceRegistry.create(config.type, name, config.config)
+        }
+        lastSources = sources
 
+        // ===== Entry Points =====
+        val entryPoints = flow.entryPoints
 
         // DAG validation
         // -- Not sure if this should be first, depends on if it requires
         //      things to exist or not
-
-
-
-        TODO()
+        return PipelineGraph(processors, connections, entryPoints, sources)
     }
 }
 
@@ -95,7 +110,7 @@ class LogAttributeProcessor: ProcessorFactory {
         const val PREFIX_CONFIG_KEY = "prefix"
         const val PROCESSOR_NAME = "LogAttribute"
         const val PROCESSOR_VERSION = "1.0.0"
-        const val PROCESSOR_DESCRIPTION = "Log FLowFile attributes and pass downstream"
+        const val PROCESSOR_DESCRIPTION = "Log FlowFile attributes and pass downstream"
         const val PROCESSOR_CATEGORY = "Attribute"
         val parameters = listOf(ParamInfo.of(PREFIX_CONFIG_KEY).description("Log line prefix").defaultValue("").build())
         val relationships = listOf("success")
@@ -104,5 +119,4 @@ class LogAttributeProcessor: ProcessorFactory {
 
 fun main() {
     val prefix = ParamInfo.of("prefix").defaultValue("").build()
-
 }

@@ -72,3 +72,11 @@ tasks.jar {
         )
     }
 }
+
+tasks.register("printRuntimeClasspath") {
+    val runtimeClasspath = sourceSets.main.get().runtimeClasspath
+    inputs.files(runtimeClasspath)
+    doLast {
+        println(runtimeClasspath.asPath)
+    }
+}

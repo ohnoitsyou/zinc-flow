@@ -263,7 +263,7 @@ class ConfigLoader @JvmOverloads constructor(
 
         val elapsed = appStartTime.elapsedNow()
         log.info("##### Pipeline processing complete: ${elapsed.inWholeMilliseconds} ms #####")
-        return PipelineGraph(processors, connections, entryPoints, listOf())
+        return PipelineGraph(processors, connections, entryPoints, lastSources)
     }
 
     /**

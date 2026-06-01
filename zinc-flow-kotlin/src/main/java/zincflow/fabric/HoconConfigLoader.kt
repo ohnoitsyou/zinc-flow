@@ -29,6 +29,7 @@ data class ZincFlowConfig(
     val processors: Map<String, ZincProcessorConfig> = emptyMap(),
     val connections: Map<String, ZincConnectionsConfig> = emptyMap(),
     val sources: Map<String, ZincSourceConfig> = emptyMap(),
+    val providers: Map<String, ZincProviderConfig> = emptyMap(),
 )
 @Serializable
 data class ZincProcessorConfig(
@@ -41,6 +42,11 @@ data class ZincConnectionsConfig(
 )
 @Serializable
 data class ZincSourceConfig(
+    val type: String,
+    val config: Map<String, String> = emptyMap(),
+)
+@Serializable
+data class ZincProviderConfig(
     val type: String,
     val config: Map<String, String> = emptyMap(),
 )
@@ -246,7 +252,68 @@ fun main() {
     println("Zinc Config: ${applicationConfig.zincConfig}")
 
     val p = ZincConfigProcessor(ProcessorRegistry(), SourceRegistry(), ProviderRegistry())
-    p.toPipeline(applicationConfig.zincConfig, ProcessorContext())
+    p.toPipeline(applicationConfig, ProcessorContext())
+
+    val yaml = """
+        flow:
+          entryPoints:
+          - ingress
+          processors:
+            ingress:
+              type: LogAttribute
+              config:
+                prefix: '[in] '
+            router:
+              type: RouteOnAttribute
+              config:
+                routes: 'urgent: priority == urgent; bulk: priority == bulk'
+            elevate:
+              type: UpdateAttribute
+              config:
+                key: priority
+                value: elevated
+            enrich:
+              type: UpdateAttribute
+              config:
+                key: route
+                value: bulk-queue
+            sink:
+              type: PutStdout
+              config:
+                prefix: '[out] '
+            LogAttribute:
+              type: LogAttribute
+          connections:
+            ingress:
+              success:
+              - router
+              original:
+              - LogAttribute
+            router:
+              urgent:
+              - elevate
+              bulk:
+              - enrich
+              unmatched:
+              - sink
+            elevate:
+              success:
+              - sink
+            enrich:
+              success:
+              - sink
+            LogAttribute:
+              success:
+              - sink
+          sources:
+            genFlow:
+              type: GenerateFlowFile
+              config:
+                content: "Hello World!"
+                pollIntervalMs: 10000
+        """.trimIndent();
+    val loader = ConfigLoader(ProcessorRegistry(), ProcessorContext(), SourceRegistry(), ProviderRegistry())
+    val graph = loader.load(yaml)
 
 //    val updatedConfig = ZincConfigLoader.applyDeltaAndReloadStack(applicationConfig, "flow { connections = ___RESET___ }", false)
 //    println("Updated Config: ${updatedConfig.zincConfig}")
