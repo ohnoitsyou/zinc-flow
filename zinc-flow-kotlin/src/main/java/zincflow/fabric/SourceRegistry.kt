@@ -10,6 +10,11 @@ import kotlin.collections.listOf
  * processors do; a bare `type: GetFile` falls through to the
  * latest registered version. */
 class SourceRegistry {
+
+    private val versioned = ConcurrentHashMap<String, Factory>()
+    private val latestVersion = ConcurrentHashMap<String, String>()
+    private val metadata = ConcurrentHashMap<String, TypeInfo>()
+
     fun interface Factory {
         fun create(name: String, config: Map<String, Any>): Source?
     }
@@ -24,10 +29,6 @@ class SourceRegistry {
             return TypeRefs.qualify(name, version)
         }
     }
-
-    private val versioned = ConcurrentHashMap<String, Factory>()
-    private val latestVersion = ConcurrentHashMap<String, String>()
-    private val metadata = ConcurrentHashMap<String, TypeInfo>()
 
     fun register(info: TypeInfo, factory: Factory) {
         val key = info.qualifiedName()

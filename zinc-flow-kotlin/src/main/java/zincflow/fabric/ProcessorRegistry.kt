@@ -59,6 +59,21 @@ import kotlin.time.toDuration
  * 
  * Stateless; one instance shared by the Fabric. */
 class ProcessorRegistry {
+
+    /** Keyed by "name@version" for pinned lookup. */
+    private val versioned = ConcurrentHashMap<String, Factory>()
+
+    /** Keyed by "name" → latest version string; lets unqualified
+     * lookups resolve to the most recent release. */
+    private val latestVersion = ConcurrentHashMap<String, String>()
+
+    /** Metadata mirror of [.versioned], keyed the same way. */
+    private val metadata = ConcurrentHashMap<String, TypeInfo>()
+
+    init {
+        registerBuiltins()
+    }
+
     /** A factory for a processor given its config map and the surrounding
      * processor context. The context is never null — callers that don't
      * care can pass `new ProcessorContext()` and ignore it inside
@@ -83,20 +98,6 @@ class ProcessorRegistry {
         fun qualifiedName(): String {
             return "$name@$version"
         }
-    }
-
-    /** Keyed by "name@version" for pinned lookup. */
-    private val versioned = ConcurrentHashMap<String, Factory>()
-
-    /** Keyed by "name" → latest version string; lets unqualified
-     * lookups resolve to the most recent release. */
-    private val latestVersion = ConcurrentHashMap<String, String>()
-
-    /** Metadata mirror of [.versioned], keyed the same way. */
-    private val metadata = ConcurrentHashMap<String, TypeInfo>()
-
-    init {
-        registerBuiltins()
     }
 
     @JvmOverloads
@@ -523,17 +524,6 @@ class ProcessorRegistry {
     companion object {
         @Deprecated("use {@link TypeRefs#DEFAULT_VERSION}. ")
         const val DEFAULT_VERSION: String = TypeRefs.DEFAULT_VERSION
-
-//        @JvmStatic
-//        @Deprecated("use {@link TypeRefs#compareVersions(String, String)}. ")
-//        fun compareVersions(a: String, b: String): Int {
-//            return TypeRefs.compareVersions(a, b)
-//        }
-
-//        @Deprecated("use {@link TypeRefs.TypeRef}. ")
-//        fun parseTypeRef(raw: String?): TypeRefs.TypeRef {
-//            return TypeRefs.TypeRef.parse(raw)
-//        }
 
         /** Return the content store exposed by the `"content"`
          * provider, or null when no such provider is wired. Processors that

@@ -15,6 +15,11 @@ import java.util.concurrent.ConcurrentHashMap
  * same type wins the latest-version lookup without changing any
  * framework code. */
 class ProviderRegistry {
+    
+    private val versioned = ConcurrentHashMap<String, Factory>()
+    private val latestVersion = ConcurrentHashMap<String, String>()
+    private val metadata = ConcurrentHashMap<String, TypeInfo>()
+
     fun interface Factory {
         fun create(config: Map<String, Any>): Provider?
     }
@@ -27,10 +32,6 @@ class ProviderRegistry {
     ) {
         val qualifiedName = TypeRefs.qualify(name, version)
     }
-
-    private val versioned = ConcurrentHashMap<String, Factory>()
-    private val latestVersion = ConcurrentHashMap<String, String>()
-    private val metadata = ConcurrentHashMap<String, TypeInfo>()
 
     fun register(info: TypeInfo, factory: Factory) {
         val key = info.qualifiedName
